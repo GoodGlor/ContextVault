@@ -43,12 +43,6 @@ uv run alembic downgrade base   # roll back
 uv run alembic revision -m "add X"   # new migration
 ```
 
-## Access boundary
-
-The access boundary is expressed in SQL: `chunks.repository_id` is denormalized so
-the permission filter (`join grants`) and the vector similarity search run as a
-single query (design spec §4/§6).
-
 ## Authentication
 
 `POST /auth/login` takes `{"username", "password"}` and returns a JWT:
