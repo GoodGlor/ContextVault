@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # it requires a re-embed and a schema migration.
     embedding_dim: int = 1024
 
+    # Chunking (ingestion `chunk` stage). Character-based windows sized for
+    # retrieval; ``chunk_overlap`` chars are shared between neighbours so a
+    # passage split across a boundary still lands whole in some chunk. Must
+    # satisfy ``chunk_overlap < chunk_size``.
+    chunk_size: int = 1000
+    chunk_overlap: int = 150
+
     # JWT session tokens.
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

@@ -99,6 +99,28 @@ doc.blocks[0].page, doc.blocks[0].start     # position info for citations
 Unsupported types raise `UnsupportedDocumentError`; corrupt or invalid files of a
 supported type raise `DocumentParseError`.
 
+## Chunking
+
+The next stage, `chunk_document(parsed)`, slices a `ParsedDocument` into overlapping
+`TextChunk`s sized for retrieval. Chunking is character-based, so every chunk keeps
+the exact span it came from — `parsed.text[chunk.char_start:chunk.char_end] ==
+chunk.text` — which is what later lets a citation jump to the highlighted passage. It
+also carries the distinct source `pages` that span touches (empty for page-less
+sources), derived from the parsed blocks.
+
+```python
+from contextvault.ingestion import chunk_document
+
+chunks = chunk_document(doc)                 # or size=/overlap= to override
+chunks[0].char_start, chunks[0].char_end     # span into doc.text, for citations
+chunks[0].pages                              # e.g. (1, 2) for a chunk crossing a page break
+```
+
+Windows advance by `size - overlap` and the final window ends exactly at the end of
+the text, so chunks tile it with no redundant tail. Size and overlap default to the
+`chunk_size` / `chunk_overlap` settings (1000 / 150 characters) and must satisfy
+`0 <= overlap < size`.
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
