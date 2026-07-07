@@ -80,6 +80,25 @@ text never leaves the server. The default is
 Swapping the model is a config change via `EMBEDDING_MODEL` and `EMBEDDING_DIM` —
 the two must match the model's output width and the pgvector column.
 
+## Document parsing
+
+Uploads are turned into text by `parse_document(filename, data)`, the first stage
+of the ingestion pipeline. It supports **PDF, DOCX, and TXT** and returns a
+`ParsedDocument` — the full text plus positioned `TextBlock`s that tile it exactly.
+Each block records its character span and, for PDFs, its 1-based page, so a citation
+can later map a character offset back to its source passage.
+
+```python
+from contextvault.ingestion import parse_document
+
+doc = parse_document("report.pdf", data)   # data: bytes
+doc.text                                    # full extracted text
+doc.blocks[0].page, doc.blocks[0].start     # position info for citations
+```
+
+Unsupported types raise `UnsupportedDocumentError`; corrupt or invalid files of a
+supported type raise `DocumentParseError`.
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
