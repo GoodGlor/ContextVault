@@ -49,11 +49,15 @@ Foundation phase (design spec §9.1), tracked as it lands:
 
 - [x] FastAPI skeleton + config + Docker Compose (Postgres + pgvector)
 - [x] Async SQLAlchemy engine/session + Alembic (async) + pgvector extension migration
-- [ ] Core schema: users, repositories, sources, chunks(+vector), grants
-- [ ] Argon2 password hashing + user model
+- [x] Core schema: users, repositories, sources, chunks(+vector), grants
+- [x] Argon2 password hashing + user model
 - [ ] JWT login + auth dependency
 - [ ] Role-based authorization (admin vs user)
 - [ ] First-admin bootstrap (seed/CLI)
+
+The access boundary is expressed in SQL: `chunks.repository_id` is denormalized so
+the permission filter (`join grants`) and the vector similarity search run as a
+single query (design spec §4/§6).
 
 ## Quality checks (Definition of Done)
 
@@ -72,9 +76,10 @@ uv run pytest                         # tests
 src/contextvault/
   main.py            # FastAPI app factory + entrypoint
   core/config.py     # Settings (pydantic-settings, .env)
+  core/security.py   # Argon2 password hashing
   db/                # Base metadata + async engine/session
   api/               # routers (health, …)
-  models/            # ORM models (added in later phases)
+  models/            # ORM models (users, repositories, sources, chunks, grants)
   services/          # business logic (added in later phases)
 migrations/          # Alembic (env.py + versions/)
 alembic.ini

@@ -7,11 +7,9 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import contextvault.models  # noqa: F401  (registers all tables on Base.metadata)
 from contextvault.core.config import get_settings
 from contextvault.db.base import Base
-
-# Import models here so their tables register on Base.metadata for autogenerate.
-# (Models are added in later phases.)
 
 config = context.config
 if config.config_file_name is not None:
