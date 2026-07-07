@@ -19,9 +19,15 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://contextvault:contextvault@localhost:5432/contextvault"
     secret_key: str = "change-me-in-production"
 
-    # Dimension of the pgvector embedding column. Tied to the active embedding
-    # model (multilingual-e5 / bge-m3 family are 1024-dim); changing it requires
-    # a re-embed and a schema migration.
+    # Local embedding model (sentence-transformers). bge-m3 is multilingual
+    # (handles Russian/Ukrainian + English) and needs no query/passage prefixes,
+    # so it fits the generic ``embed(texts)`` interface directly. Swapping to the
+    # multilingual-e5 family is a config change — see the README embeddings note.
+    embedding_model: str = "BAAI/bge-m3"
+
+    # Dimension of the pgvector embedding column. Must match ``embedding_model``'s
+    # output width (bge-m3 and multilingual-e5-large are both 1024-dim); changing
+    # it requires a re-embed and a schema migration.
     embedding_dim: int = 1024
 
     # JWT session tokens.

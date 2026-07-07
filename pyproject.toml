@@ -15,6 +15,7 @@ dependencies = [
     "pgvector>=0.5.0",
     "argon2-cffi>=25.1.0",
     "pyjwt>=2.13.0",
+    "sentence-transformers>=3.0",
 ]
 
 [dependency-groups]
@@ -49,6 +50,11 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Security"
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+# sentence-transformers ships no type stubs; treat its imports as untyped.
+[[tool.mypy.overrides]]
+module = ["sentence_transformers.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
