@@ -43,6 +43,18 @@ uv run alembic downgrade base   # roll back
 uv run alembic revision -m "add X"   # new migration
 ```
 
+## Implementation status
+
+Foundation phase (design spec §9.1), tracked as it lands:
+
+- [x] FastAPI skeleton + config + Docker Compose (Postgres + pgvector)
+- [x] Async SQLAlchemy engine/session + Alembic (async) + pgvector extension migration
+- [ ] Core schema: users, repositories, sources, chunks(+vector), grants
+- [ ] Argon2 password hashing + user model
+- [ ] JWT login + auth dependency
+- [ ] Role-based authorization (admin vs user)
+- [ ] First-admin bootstrap (seed/CLI)
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
