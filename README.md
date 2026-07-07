@@ -33,6 +33,28 @@ uv run uvicorn contextvault.main:app --reload
 curl http://127.0.0.1:8000/health   # -> {"status":"ok"}
 ```
 
+## Database migrations
+
+Migrations use Alembic (async). With the database running (`docker compose up -d`):
+
+```bash
+uv run alembic upgrade head     # apply migrations
+uv run alembic downgrade base   # roll back
+uv run alembic revision -m "add X"   # new migration
+```
+
+## Implementation status
+
+Foundation phase (design spec §9.1), tracked as it lands:
+
+- [x] FastAPI skeleton + config + Docker Compose (Postgres + pgvector)
+- [x] Async SQLAlchemy engine/session + Alembic (async) + pgvector extension migration
+- [ ] Core schema: users, repositories, sources, chunks(+vector), grants
+- [ ] Argon2 password hashing + user model
+- [ ] JWT login + auth dependency
+- [ ] Role-based authorization (admin vs user)
+- [ ] First-admin bootstrap (seed/CLI)
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
@@ -50,9 +72,12 @@ uv run pytest                         # tests
 src/contextvault/
   main.py            # FastAPI app factory + entrypoint
   core/config.py     # Settings (pydantic-settings, .env)
+  db/                # Base metadata + async engine/session
   api/               # routers (health, …)
   models/            # ORM models (added in later phases)
   services/          # business logic (added in later phases)
+migrations/          # Alembic (env.py + versions/)
+alembic.ini
 tests/               # pytest suite
 docker-compose.yml   # local Postgres + pgvector
 ```
