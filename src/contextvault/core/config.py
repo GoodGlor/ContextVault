@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     # a re-embed and a schema migration.
     embedding_dim: int = 1024
 
+    # JWT session tokens.
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
+
+    # First-admin bootstrap (see `python -m contextvault.cli create-admin`).
+    initial_admin_username: str | None = None
+    initial_admin_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

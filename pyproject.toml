@@ -14,6 +14,7 @@ dependencies = [
     "alembic>=1.14",
     "pgvector>=0.5.0",
     "argon2-cffi>=25.1.0",
+    "pyjwt>=2.13.0",
 ]
 
 [dependency-groups]
@@ -39,6 +40,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are designed to be called in argument defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Security"]
 
 [tool.mypy]
 python_version = "3.12"

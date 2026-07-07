@@ -51,13 +51,40 @@ Foundation phase (design spec §9.1), tracked as it lands:
 - [x] Async SQLAlchemy engine/session + Alembic (async) + pgvector extension migration
 - [x] Core schema: users, repositories, sources, chunks(+vector), grants
 - [x] Argon2 password hashing + user model
-- [ ] JWT login + auth dependency
-- [ ] Role-based authorization (admin vs user)
-- [ ] First-admin bootstrap (seed/CLI)
+- [x] JWT login + auth dependency
+- [x] Role-based authorization (admin vs user)
+- [x] First-admin bootstrap (seed/CLI)
 
 The access boundary is expressed in SQL: `chunks.repository_id` is denormalized so
 the permission filter (`join grants`) and the vector similarity search run as a
 single query (design spec §4/§6).
+
+## Authentication
+
+`POST /auth/login` takes `{"username", "password"}` and returns a JWT:
+
+```json
+{ "access_token": "…", "token_type": "bearer", "must_change_password": false }
+```
+
+Send it as `Authorization: Bearer <token>` on protected routes. The
+`get_current_user` dependency resolves the token to a user (401 otherwise); build
+role guards with `require_role(...)` / `require_admin` (403 when the role is
+insufficient). Tune `ACCESS_TOKEN_EXPIRE_MINUTES` and set a strong `SECRET_KEY`
+(≥ 32 bytes) in production.
+
+## First-admin bootstrap
+
+Onboarding is invite-based, but the first admin has no one to invite them. Seed one
+(idempotent — a no-op once any admin exists):
+
+```bash
+# credentials via flags…
+uv run python -m contextvault.cli create-admin --username admin --password '<strong>'
+
+# …or via the environment (INITIAL_ADMIN_USERNAME / INITIAL_ADMIN_PASSWORD)
+uv run python -m contextvault.cli create-admin
+```
 
 ## Quality checks (Definition of Done)
 
@@ -75,12 +102,14 @@ uv run pytest                         # tests
 ```
 src/contextvault/
   main.py            # FastAPI app factory + entrypoint
+  cli.py             # `python -m contextvault.cli` (create-admin bootstrap)
   core/config.py     # Settings (pydantic-settings, .env)
   core/security.py   # Argon2 password hashing
+  core/tokens.py     # JWT create/decode
   db/                # Base metadata + async engine/session
-  api/               # routers (health, …)
+  api/               # routers (health, auth) + deps (get_current_user, require_admin)
   models/            # ORM models (users, repositories, sources, chunks, grants)
-  services/          # business logic (added in later phases)
+  services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
 tests/               # pytest suite
