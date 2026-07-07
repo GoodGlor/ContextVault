@@ -89,36 +89,13 @@ uv run python -m contextvault.cli create-admin
 
 ## Embeddings
 
-Retrieval embeds text with a pluggable `EmbeddingProvider` (`embed(texts) -> vectors`,
-plus a `dimension`). v1 ships one local, free implementation
-(`LocalEmbeddingProvider`) backed by a multilingual sentence-transformers model, so
-document text never leaves the server and there is no per-call cost:
+Text is embedded through a pluggable `EmbeddingProvider`. v1 ships one local, free
+implementation backed by a multilingual sentence-transformers model, so document
+text never leaves the server. The default is
+[`BAAI/bge-m3`](https://huggingface.co/BAAI/bge-m3) (multilingual, 1024-dim).
 
-```python
-from contextvault.embeddings import get_embedding_provider
-
-provider = get_embedding_provider()      # config-driven, cached
-vectors = provider.embed(["hello", "привіт"])   # each len == provider.dimension
-```
-
-The model is loaded lazily on first use, then reused. The default is
-[`BAAI/bge-m3`](https://huggingface.co/BAAI/bge-m3) — multilingual (Russian /
-Ukrainian / English), 1024-dim, and needs no query/passage prefixes.
-
-**Swapping the model is a config change** (`EMBEDDING_MODEL` + `EMBEDDING_DIM`).
-The two must agree: on first load the provider checks the model's real width against
-`EMBEDDING_DIM` and raises if they differ. Because vectors are stored in a fixed-width
-pgvector column, changing the model (or its dimension) means a schema migration and
-re-embedding existing chunks. To use the `multilingual-e5` family instead, set
-`EMBEDDING_MODEL=intfloat/multilingual-e5-large` (also 1024-dim); note e5 expects
-`query:` / `passage:` prefixes for best results.
-
-Because the real model is large, the automated tests use a fake and skip the
-model-download test by default. Run it explicitly with:
-
-```bash
-RUN_EMBEDDING_MODEL_TESTS=1 uv run pytest tests/test_embeddings.py
-```
+Swapping the model is a config change via `EMBEDDING_MODEL` and `EMBEDDING_DIM` —
+the two must match the model's output width and the pgvector column.
 
 ## Quality checks (Definition of Done)
 
