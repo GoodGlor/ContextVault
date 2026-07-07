@@ -6,14 +6,24 @@ leave data behind. It skips (rather than fails) when no migrated database is
 reachable, keeping the pure-unit suite green in environments without Postgres.
 """
 
-from collections.abc import AsyncGenerator
+import os
 
-import pytest
-import sqlalchemy as sa
-from sqlalchemy.exc import DBAPIError, OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+# A >=32-byte secret keeps PyJWT from emitting InsecureKeyLength warnings during
+# tests. Set before any settings are read. Production overrides via the env/.env.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-at-least-32-bytes")
 
-from contextvault.core.config import get_settings
+from collections.abc import AsyncGenerator  # noqa: E402
+
+import pytest  # noqa: E402
+import sqlalchemy as sa  # noqa: E402
+from sqlalchemy.exc import DBAPIError, OperationalError  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
+
+import contextvault.models  # noqa: E402, F401  (registers tables on Base.metadata)
+from contextvault.core.config import get_settings  # noqa: E402
+from contextvault.db.base import Base  # noqa: E402
+
+_ALL_TABLES = ", ".join(t.name for t in Base.metadata.sorted_tables)
 
 
 @pytest.fixture
@@ -28,6 +38,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
     conn = await engine.connect()
     trans = await conn.begin()
+    # Start each test from a clean slate regardless of any committed rows; the
+    # outer rollback below restores them, so the truncate is test-local only.
+    await conn.execute(sa.text(f"TRUNCATE {_ALL_TABLES} RESTART IDENTITY CASCADE"))
     session = AsyncSession(bind=conn, expire_on_commit=False)
     try:
         yield session
