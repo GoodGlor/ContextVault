@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # context at the cost of prompt size / latency (design spec §4).
     retrieval_top_k: int = 5
 
+    # Minimum cosine similarity (in ``[-1, 1]``) a retrieved chunk must reach to
+    # count as relevant. Hits below this are dropped, so a query that finds only
+    # weak matches yields no chunks — the signal behind the honest "not in this
+    # vault" answer and the knowledge-gap dashboard (design spec §4/§5). Tune per
+    # embedding model; higher is stricter. bge-m3 relevant matches sit well above
+    # this conservative default.
+    retrieval_min_score: float = 0.3
+
     # JWT session tokens.
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
