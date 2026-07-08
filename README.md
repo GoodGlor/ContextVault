@@ -242,19 +242,29 @@ provider = get_llm_provider()               # honours LLM_PROVIDER (default: gem
 answer = await provider.answer(question, chunks)
 ```
 
-The **Google (Gemini)** provider (`GeminiLLMProvider`, via the Google GenAI SDK)
-is the current default. It lays the retrieved chunks out under `[1..n]` markers,
-instructs the model to answer **only** from them, and parses the `[n]` markers in
-the reply back into `Citation`s — no vendor-native citation feature is used, so
-the citation experience is identical across providers. Empty `chunks`
-short-circuit to the honest "not in this vault" answer without an API call.
+Both providers share the same behaviour: they lay the retrieved chunks out under
+`[1..n]` markers, instruct the model to answer **only** from them, and parse the
+`[n]` markers in the reply back into `Citation`s — no vendor-native citation
+feature is used, so the citation experience is identical across providers. Empty
+`chunks` short-circuit to the honest "not in this vault" answer without an API
+call. Each provider carries a self-contained copy of the numbered-chunk
+prompt/parse/map; a later card unifies that scheme, and per-repo routing across
+providers wires them all into the factory.
 
+#### Google (Gemini) — default
+
+`GeminiLLMProvider` (via the Google GenAI SDK) is the current default.
 Configuration (`.env` / settings): `GEMINI_API_KEY` authenticates the SDK
 (falling back to the SDK's own `GEMINI_API_KEY` / `GOOGLE_API_KEY` resolution),
 `GEMINI_MODEL` selects the model (default `gemini-2.5-flash`), and
-`LLM_MAX_TOKENS` caps the answer length. Each provider carries a self-contained
-copy of the numbered-chunk prompt/parse/map; a later card unifies that scheme,
-and per-repo routing across providers wires the other providers into the factory.
+`LLM_MAX_TOKENS` caps the answer length.
+
+#### Anthropic (Claude)
+
+`AnthropicLLMProvider` (via the official Anthropic SDK) is constructed directly
+today and joins `get_llm_provider()` when provider routing lands. Configuration:
+`ANTHROPIC_API_KEY` authenticates the SDK, `ANTHROPIC_MODEL` selects the Claude
+model (default `claude-opus-4-8`), and `LLM_MAX_TOKENS` caps the answer length.
 
 ## Source API (admin)
 
@@ -297,7 +307,7 @@ src/contextvault/
   api/               # routers (health, auth) + deps (get_current_user, require_admin)
   models/            # ORM models (users, repositories, sources, chunks, grants)
   retrieval/         # access-filtered vector search + question→chunks service
-  llm/               # LLMProvider interface + Answer/Citation schema + Gemini provider + factory
+  llm/               # LLMProvider interface + Answer/Citation schema + Gemini/Anthropic providers + factory
   services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
