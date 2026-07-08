@@ -200,6 +200,36 @@ result.top_score       # best similarity among *retrievable* chunks, or None
 enough — `top_score` set, `chunks` empty) from an **empty or inaccessible vault**
 (`top_score` is `None`). The query endpoint builds on top of this.
 
+## Generation (LLM provider interface)
+
+Answers are generated through a pluggable `LLMProvider`, so any vendor —
+Anthropic, OpenAI/OpenRouter, Google — sits behind one contract and the RAG loop
+never depends on a vendor SDK (design spec §4/§7). This is the interface only;
+concrete providers arrive in later cards.
+
+```python
+from contextvault.llm import Answer, Citation, LLMProvider
+
+# every provider implements:
+async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer: ...
+```
+
+An `Answer` is the answer `text` plus a list of `Citation`s. Because only Claude
+has native citations, the scheme is **provider-agnostic**: the retrieved chunks
+are numbered `[1..n]`, the model is told to cite those numbers, and each
+`Citation` maps a marker back to its exact source span:
+
+```python
+Citation(number=1, chunk_id=…, source_id=…, char_start=120, char_end=170)
+```
+
+`char_start`/`char_end` are `None` when the cited chunk had no positional offsets.
+An `Answer` with text but **no citations** is the honest "not in this vault"
+response: when `chunks` is empty, a provider states the repository doesn't cover
+the question instead of answering from the model's own training data (design spec
+§4). The prompt/parse/map machinery that produces the numbered citations, and the
+first concrete provider, are separate cards.
+
 ## Source API (admin)
 
 Admin-only endpoints manage a repository's sources and expose ingestion status. All
@@ -240,6 +270,8 @@ src/contextvault/
   db/                # Base metadata + async engine/session
   api/               # routers (health, auth) + deps (get_current_user, require_admin)
   models/            # ORM models (users, repositories, sources, chunks, grants)
+  retrieval/         # access-filtered vector search + question→chunks service
+  llm/               # provider-agnostic LLMProvider interface + Answer/Citation schema
   services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
