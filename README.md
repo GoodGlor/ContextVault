@@ -169,8 +169,36 @@ hits[0].char_start, hits[0].char_end      # source offsets, for citation highlig
 Results are the top-k chunks ordered by cosine similarity (`k` defaults to the
 `retrieval_top_k` setting). Chunks without an embedding are skipped. Similarity is
 cosine, backed by an **HNSW ANN index** on `chunks.embedding` with
-`vector_cosine_ops` (migration `b6be69ab221b`). This is the raw query layer; the
-question→embed→search service and the query endpoint build on top of it.
+`vector_cosine_ops` (migration `b6be69ab221b`). This is the raw query layer.
+
+### Retrieval service (question → relevant chunks)
+
+`retrieve(session, question=…, repository_id=…, user_id=…, embedder=…)` is the
+service the RAG loop calls. It embeds the question with the system-wide provider,
+runs `search_chunks`, then keeps only hits whose cosine similarity clears a
+**relevance threshold** (`min_score`, defaulting to the `retrieval_min_score`
+setting). Filtering weak matches is what makes the honest "not in this vault"
+answer and the knowledge-gap dashboard possible (design spec §4/§5).
+
+```python
+from contextvault.embeddings import get_embedding_provider
+from contextvault.retrieval import retrieve
+
+result = await retrieve(
+    session,
+    question="How do I rotate the signing key?",
+    repository_id=repo.id,
+    user_id=user.id,
+    embedder=get_embedding_provider(),
+)
+result.chunks          # relevant hits, ranked closest first (empty → "not in this vault")
+result.has_results     # True when at least one chunk cleared the threshold
+result.top_score       # best similarity among *retrievable* chunks, or None
+```
+
+`top_score` distinguishes a **knowledge gap** (chunks exist but none relevant
+enough — `top_score` set, `chunks` empty) from an **empty or inaccessible vault**
+(`top_score` is `None`). The query endpoint builds on top of this.
 
 ## Source API (admin)
 
