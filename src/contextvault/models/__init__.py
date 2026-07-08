@@ -1,7 +1,7 @@
 """ORM models. Importing this package registers every table on Base.metadata."""
 
 from contextvault.models.chunk import Chunk
-from contextvault.models.enums import Role, SourceKind
+from contextvault.models.enums import Role, SourceKind, SourceStatus
 from contextvault.models.grant import Grant
 from contextvault.models.repository import Repository
 from contextvault.models.source import Source
@@ -14,5 +14,6 @@ __all__ = [
     "Role",
     "Source",
     "SourceKind",
+    "SourceStatus",
     "User",
 ]

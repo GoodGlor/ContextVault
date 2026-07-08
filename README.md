@@ -121,6 +121,33 @@ the text, so chunks tile it with no redundant tail. Size and overlap default to 
 `chunk_size` / `chunk_overlap` settings (1000 / 150 characters) and must satisfy
 `0 <= overlap < size`.
 
+## Ingestion pipeline
+
+`ingest_source(session, source, filename=…, data=…, embedder=…)` orchestrates the
+full pipeline — **parse → chunk → embed → store** — for one source. It parses the
+uploaded bytes, chunks the text, embeds every chunk with the given
+[`EmbeddingProvider`](#embeddings), and stores the results as `Chunk` rows (each with
+its char offsets and vector). It is **idempotent**: a re-ingest deletes the source's
+prior chunks before writing the new ones.
+
+Each `Source` tracks its own ingestion `status` — `pending → processing → done` on
+success, or `failed` on error, with the message captured in `ingest_error`. Failures
+are recorded on the source rather than raised, so they are never silent; a caller
+inspects `source.status`.
+
+```python
+from contextvault.services.ingestion import ingest_source, run_ingestion
+
+await ingest_source(session, source, filename="report.pdf", data=data, embedder=embedder)
+source.status        # SourceStatus.DONE (or .FAILED, with source.ingest_error set)
+```
+
+Because ingestion is slower than a request should block on, `run_ingestion(source_id,
+…)` is the seam a handler schedules via FastAPI `BackgroundTasks`: it opens its own
+session (the request's is already closed by the time it runs) and delegates to
+`ingest_source`. The embedding call runs off the event loop so it doesn't block other
+requests. Wiring it to an upload endpoint is a later card.
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:

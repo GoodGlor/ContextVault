@@ -1,0 +1,187 @@
+"""End-to-end tests for the ingestion pipeline (parse→chunk→embed→store).
+
+DB-backed: they use the ``db_session`` fixture and skip when no migrated
+database is reachable (see conftest). The embedder is faked — a deterministic
+vector per text of the configured width — so the suite stays fast and offline.
+"""
+
+import uuid
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from contextvault.core.config import get_settings
+from contextvault.models import Chunk, Repository, Source, SourceKind, SourceStatus
+from contextvault.services.ingestion import ingest_source, run_ingestion
+
+
+class FakeEmbedder:
+    """Deterministic ``EmbeddingProvider``: one fixed-width vector per text."""
+
+    def __init__(self, dimension: int) -> None:
+        self._dimension = dimension
+        self.calls: list[list[str]] = []
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [[0.1] * self._dimension for _ in texts]
+
+
+class BoomEmbedder:
+    """An embedder that always fails, to exercise the failure path."""
+
+    @property
+    def dimension(self) -> int:
+        return get_settings().embedding_dim
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        raise RuntimeError("embed exploded")
+
+
+def _fixed_factory(session: AsyncSession):  # type: ignore[no-untyped-def]
+    """A session factory that always yields ``session`` without closing it."""
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[AsyncSession]:
+        yield session
+
+    return factory
+
+
+async def _make_source(session: AsyncSession) -> tuple[Repository, Source]:
+    repo = Repository(name="Vault")
+    session.add(repo)
+    await session.flush()
+    source = Source(
+        repository_id=repo.id,
+        kind=SourceKind.DOCUMENT,
+        title="Doc",
+        original_filename="doc.txt",
+    )
+    session.add(source)
+    await session.flush()
+    return repo, source
+
+
+async def _chunks_for(session: AsyncSession, source: Source) -> list[Chunk]:
+    result = await session.execute(
+        sa.select(Chunk).where(Chunk.source_id == source.id).order_by(Chunk.ordinal)
+    )
+    return list(result.scalars().all())
+
+
+async def test_source_defaults_to_pending(db_session: AsyncSession) -> None:
+    _, source = await _make_source(db_session)
+    refreshed = await db_session.get(Source, source.id)
+    assert refreshed is not None
+    assert refreshed.status is SourceStatus.PENDING
+
+
+async def test_ingest_populates_chunks_and_marks_done(db_session: AsyncSession) -> None:
+    repo, source = await _make_source(db_session)
+    text = "Sentence number one. " * 200  # long enough for several chunks
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await ingest_source(
+        db_session, source, filename="doc.txt", data=text.encode(), embedder=embedder
+    )
+
+    assert source.status is SourceStatus.DONE
+    assert source.ingest_error is None
+    assert source.content == text
+    assert embedder.calls  # the embedder was actually used
+
+    chunks = await _chunks_for(db_session, source)
+    assert len(chunks) >= 2
+    assert [c.ordinal for c in chunks] == list(range(len(chunks)))
+    for chunk in chunks:
+        assert chunk.repository_id == repo.id
+        assert chunk.embedding is not None
+        assert len(list(chunk.embedding)) == embedder.dimension
+        # Offsets slice the chunk text back out of the source — citation-ready.
+        assert text[chunk.char_start : chunk.char_end] == chunk.content
+
+
+async def test_embedding_failure_is_recorded(db_session: AsyncSession) -> None:
+    _, source = await _make_source(db_session)
+
+    await ingest_source(
+        db_session, source, filename="doc.txt", data=b"hello", embedder=BoomEmbedder()
+    )
+
+    assert source.status is SourceStatus.FAILED
+    assert source.ingest_error is not None
+    assert "embed exploded" in source.ingest_error
+    assert await _chunks_for(db_session, source) == []
+
+
+async def test_parse_failure_is_recorded(db_session: AsyncSession) -> None:
+    _, source = await _make_source(db_session)
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await ingest_source(db_session, source, filename="doc.xyz", data=b"anything", embedder=embedder)
+
+    assert source.status is SourceStatus.FAILED
+    assert source.ingest_error  # the UnsupportedDocumentError was captured
+    assert await _chunks_for(db_session, source) == []
+
+
+async def test_reingest_replaces_prior_chunks(db_session: AsyncSession) -> None:
+    _, source = await _make_source(db_session)
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await ingest_source(
+        db_session, source, filename="doc.txt", data=b"first body " * 200, embedder=embedder
+    )
+    first_ids = {c.id for c in await _chunks_for(db_session, source)}
+    assert first_ids
+
+    await ingest_source(
+        db_session, source, filename="doc.txt", data=b"short second", embedder=embedder
+    )
+    second = await _chunks_for(db_session, source)
+    second_ids = {c.id for c in second}
+
+    assert source.status is SourceStatus.DONE
+    assert first_ids.isdisjoint(second_ids)  # prior chunks were replaced, not appended
+    assert len(second) == 1
+    assert second[0].content == "short second"
+
+
+async def test_run_ingestion_missing_source_is_noop(db_session: AsyncSession) -> None:
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await run_ingestion(
+        uuid.uuid4(),
+        filename="x.txt",
+        data=b"hi",
+        embedder=embedder,
+        session_factory=_fixed_factory(db_session),
+    )
+
+    count = (await db_session.execute(sa.select(sa.func.count()).select_from(Chunk))).scalar_one()
+    assert count == 0
+
+
+async def test_run_ingestion_delegates_to_pipeline(db_session: AsyncSession) -> None:
+    _, source = await _make_source(db_session)
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await run_ingestion(
+        source.id,
+        filename="doc.txt",
+        data=b"body text here",
+        embedder=embedder,
+        session_factory=_fixed_factory(db_session),
+    )
+
+    refreshed = await db_session.get(Source, source.id)
+    assert refreshed is not None
+    assert refreshed.status is SourceStatus.DONE
+    assert len(await _chunks_for(db_session, source)) == 1
