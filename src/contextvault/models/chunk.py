@@ -3,7 +3,7 @@
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, Text
+from sqlalchemy import ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from contextvault.core.config import get_settings
@@ -20,6 +20,17 @@ class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "chunks"
+    # HNSW ANN index for cosine similarity search — the ops class matches the
+    # cosine distance the retrieval query orders by (design spec §4). Created by
+    # migration b6be69ab221b; declared here so the ORM stays in sync.
+    __table_args__ = (
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
 
     source_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True

@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 150
 
+    # Retrieval (RAG loop). Number of most-similar chunks the vector search
+    # returns for a query, before generation. Higher gives the model more
+    # context at the cost of prompt size / latency (design spec §4).
+    retrieval_top_k: int = 5
+
     # JWT session tokens.
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
