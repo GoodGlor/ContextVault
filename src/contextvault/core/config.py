@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # this conservative default.
     retrieval_min_score: float = 0.3
 
+    # Generation (RAG loop). The Anthropic (Claude) provider — the first concrete
+    # ``LLMProvider`` (design spec §4). ``anthropic_api_key`` authenticates the
+    # SDK (falls back to the ``ANTHROPIC_API_KEY`` the SDK reads itself when
+    # unset); ``anthropic_model`` selects the Claude model and is configurable per
+    # the card. ``llm_max_tokens`` caps the generated answer length.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-4-8"
+    llm_max_tokens: int = 2048
+
     # JWT session tokens.
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

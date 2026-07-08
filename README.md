@@ -227,8 +227,30 @@ Citation(number=1, chunk_id=…, source_id=…, char_start=120, char_end=170)
 An `Answer` with text but **no citations** is the honest "not in this vault"
 response: when `chunks` is empty, a provider states the repository doesn't cover
 the question instead of answering from the model's own training data (design spec
-§4). The prompt/parse/map machinery that produces the numbered citations, and the
-first concrete provider, are separate cards.
+§4).
+
+### Anthropic (Claude) provider
+
+`AnthropicLLMProvider` is the first concrete provider, backed by Claude through
+the official Anthropic SDK. It lays the retrieved chunks out under `[1..n]`
+markers, tells the model to answer **only** from them, and parses the `[n]`
+markers in the reply back into `Citation`s — Claude's native-citation feature is
+deliberately unused so the citation experience is identical across every provider.
+When `chunks` is empty it returns the honest "not in this vault" answer directly,
+without spending an API call.
+
+```python
+from contextvault.llm.anthropic import AnthropicLLMProvider
+
+provider = AnthropicLLMProvider()          # model + key from settings
+answer = await provider.answer(question, chunks)
+```
+
+Configuration (`.env` / settings): `ANTHROPIC_API_KEY` authenticates the SDK,
+`ANTHROPIC_MODEL` selects the Claude model (default `claude-opus-4-8`), and
+`LLM_MAX_TOKENS` caps the answer length. The provider carries a self-contained
+version of the numbered-chunk prompt/parse/map; a later card generalises that
+scheme into a shared module the OpenAI/Google providers reuse.
 
 ## Source API (admin)
 
@@ -271,7 +293,7 @@ src/contextvault/
   api/               # routers (health, auth) + deps (get_current_user, require_admin)
   models/            # ORM models (users, repositories, sources, chunks, grants)
   retrieval/         # access-filtered vector search + question→chunks service
-  llm/               # provider-agnostic LLMProvider interface + Answer/Citation schema
+  llm/               # LLMProvider interface + Answer/Citation schema + Anthropic provider
   services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
