@@ -148,6 +148,30 @@ session (the request's is already closed by the time it runs) and delegates to
 `ingest_source`. The embedding call runs off the event loop so it doesn't block other
 requests.
 
+## Retrieval (access-filtered vector search)
+
+`search_chunks(session, user_id=…, repository_id=…, query_embedding=…)` is the
+RAG loop's core access boundary. It runs the similarity search and the permission
+check as a **single SQL query**: `chunks` is joined to `grants`, so a user only
+ever retrieves from a repository they hold an **active (non-expired)** grant on —
+the boundary lives in the query, not in app code layered on top (design spec §4/§6).
+
+```python
+from contextvault.retrieval import search_chunks
+
+hits = search_chunks(
+    session, user_id=user.id, repository_id=repo.id, query_embedding=vector, k=5
+)
+hits[0].content, hits[0].score            # passage text + cosine similarity (higher = closer)
+hits[0].char_start, hits[0].char_end      # source offsets, for citation highlighting
+```
+
+Results are the top-k chunks ordered by cosine similarity (`k` defaults to the
+`retrieval_top_k` setting). Chunks without an embedding are skipped. Similarity is
+cosine, backed by an **HNSW ANN index** on `chunks.embedding` with
+`vector_cosine_ops` (migration `b6be69ab221b`). This is the raw query layer; the
+question→embed→search service and the query endpoint build on top of it.
+
 ## Source API (admin)
 
 Admin-only endpoints manage a repository's sources and expose ingestion status. All
