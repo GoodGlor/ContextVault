@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     # this conservative default.
     retrieval_min_score: float = 0.3
 
+    # Generation (RAG loop). ``llm_provider`` selects the system-default LLM
+    # provider the RAG loop generates with (design spec §4/§7); full per-repo
+    # routing across providers is a later card. The Google (Gemini) provider
+    # authenticates with ``gemini_api_key`` (falling back to the SDK's own
+    # GEMINI_API_KEY / GOOGLE_API_KEY resolution when unset) and ``gemini_model``
+    # is configurable. ``llm_max_tokens`` caps the generated answer length.
+    llm_provider: str = "gemini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    llm_max_tokens: int = 2048
+
     # JWT session tokens.
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

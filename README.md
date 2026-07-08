@@ -227,8 +227,34 @@ Citation(number=1, chunk_id=…, source_id=…, char_start=120, char_end=170)
 An `Answer` with text but **no citations** is the honest "not in this vault"
 response: when `chunks` is empty, a provider states the repository doesn't cover
 the question instead of answering from the model's own training data (design spec
-§4). The prompt/parse/map machinery that produces the numbered citations, and the
-first concrete provider, are separate cards.
+§4).
+
+### Providers and default selection
+
+`get_llm_provider()` returns the system-default provider, chosen by the
+`LLM_PROVIDER` setting (default **`gemini`**), so the RAG loop generates through
+the contract and never names a vendor SDK:
+
+```python
+from contextvault.llm import get_llm_provider
+
+provider = get_llm_provider()               # honours LLM_PROVIDER (default: gemini)
+answer = await provider.answer(question, chunks)
+```
+
+The **Google (Gemini)** provider (`GeminiLLMProvider`, via the Google GenAI SDK)
+is the current default. It lays the retrieved chunks out under `[1..n]` markers,
+instructs the model to answer **only** from them, and parses the `[n]` markers in
+the reply back into `Citation`s — no vendor-native citation feature is used, so
+the citation experience is identical across providers. Empty `chunks`
+short-circuit to the honest "not in this vault" answer without an API call.
+
+Configuration (`.env` / settings): `GEMINI_API_KEY` authenticates the SDK
+(falling back to the SDK's own `GEMINI_API_KEY` / `GOOGLE_API_KEY` resolution),
+`GEMINI_MODEL` selects the model (default `gemini-2.5-flash`), and
+`LLM_MAX_TOKENS` caps the answer length. Each provider carries a self-contained
+copy of the numbered-chunk prompt/parse/map; a later card unifies that scheme,
+and per-repo routing across providers wires the other providers into the factory.
 
 ## Source API (admin)
 
@@ -271,7 +297,7 @@ src/contextvault/
   api/               # routers (health, auth) + deps (get_current_user, require_admin)
   models/            # ORM models (users, repositories, sources, chunks, grants)
   retrieval/         # access-filtered vector search + question→chunks service
-  llm/               # provider-agnostic LLMProvider interface + Answer/Citation schema
+  llm/               # LLMProvider interface + Answer/Citation schema + Gemini provider + factory
   services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
