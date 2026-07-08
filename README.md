@@ -146,7 +146,24 @@ Because ingestion is slower than a request should block on, `run_ingestion(sourc
 …)` is the seam a handler schedules via FastAPI `BackgroundTasks`: it opens its own
 session (the request's is already closed by the time it runs) and delegates to
 `ingest_source`. The embedding call runs off the event loop so it doesn't block other
-requests. Wiring it to an upload endpoint is a later card.
+requests.
+
+## Source API (admin)
+
+Admin-only endpoints manage a repository's sources and expose ingestion status. All
+require an admin bearer token; non-admins get `403`.
+
+| Method & path | Purpose |
+|---|---|
+| `POST /repositories/{id}/sources` | Upload a document (multipart `file`). Creates the source `pending` and schedules background ingestion; returns `201` with the source. |
+| `GET /repositories/{id}/sources` | List a repository's sources (oldest first). |
+| `GET /sources/{id}` | Fetch one source, including `status` and `ingest_error`. |
+| `DELETE /sources/{id}` | Delete a source; its chunks cascade away. |
+
+Upload returns immediately with `status: "pending"` — ingestion runs in the
+background, so poll `GET /sources/{id}` to watch it move to `done` (or `failed`, with
+`ingest_error` set). The embedding provider is injected via a dependency
+(`get_embedder`), defaulting to the local model.
 
 ## Quality checks (Definition of Done)
 
