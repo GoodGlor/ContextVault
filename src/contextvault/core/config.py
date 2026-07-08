@@ -50,11 +50,15 @@ class Settings(BaseSettings):
     # this conservative default.
     retrieval_min_score: float = 0.3
 
-    # Generation (RAG loop). The Anthropic (Claude) provider — the first concrete
-    # ``LLMProvider`` (design spec §4). ``anthropic_api_key`` authenticates the
-    # SDK (falls back to the ``ANTHROPIC_API_KEY`` the SDK reads itself when
-    # unset); ``anthropic_model`` selects the Claude model and is configurable per
-    # the card. ``llm_max_tokens`` caps the generated answer length.
+    # Generation (RAG loop). ``llm_provider`` selects the system-default LLM
+    # provider the RAG loop generates with (design spec §4/§7); full per-repo
+    # routing across providers is a later card. Each provider authenticates with
+    # its own key (falling back to the SDK's own env resolution when unset) and
+    # exposes a configurable model. ``llm_max_tokens`` caps the generated answer
+    # length.
+    llm_provider: str = "gemini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-4-8"
     llm_max_tokens: int = 2048
