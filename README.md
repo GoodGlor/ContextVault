@@ -311,6 +311,45 @@ background, so poll `GET /sources/{id}` to watch it move to `done` (or `failed`,
 `ingest_error` set). The embedding provider is injected via a dependency
 (`get_embedder`), defaulting to the local model.
 
+## Query API (the full RAG loop)
+
+One endpoint runs the whole loop end-to-end — authenticate, enforce access,
+retrieve, generate, cite:
+
+| Method & path | Purpose |
+|---|---|
+| `POST /repositories/{id}/query` | Ask a question against one repository. Body `{"question": "..."}`; returns the grounded answer with citations and their source documents. |
+
+Any authenticated user may call it, but access is enforced up front: the
+repository must exist (`404` otherwise) and the caller must hold an **active
+grant** on it (`403` otherwise — the same grant predicate the retrieval query
+enforces at the SQL level, surfaced here as an explicit denial rather than an
+empty result). An expired grant is treated as no grant.
+
+Past the gate the loop is: embed the question → access-filtered, thresholded
+retrieval → generate through the system-default `LLMProvider` (the `get_llm`
+dependency; per-repo routing is a later card) → resolve the `[n]` markers to
+source spans. The response is:
+
+```json
+{
+  "answer": "…grounded prose with [1] markers…",
+  "not_in_vault": false,
+  "citations": [
+    {"number": 1, "chunk_id": "…", "source_id": "…", "char_start": 0, "char_end": 42}
+  ],
+  "sources": [
+    {"id": "…", "title": "policy.txt", "original_filename": "policy.txt", "kind": "document"}
+  ]
+}
+```
+
+`sources` lists the distinct documents the citations point at (first-cited
+order), so the UI can label and link each `[n]`. When retrieval surfaces nothing
+relevant, the honest "not in this vault" behaviour carries through the provider
+untouched: `not_in_vault` is `true`, `answer` is the refusal text, and both
+`citations` and `sources` are empty — the endpoint never special-cases it.
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
@@ -332,7 +371,7 @@ src/contextvault/
   core/security.py   # Argon2 password hashing
   core/tokens.py     # JWT create/decode
   db/                # Base metadata + async engine/session
-  api/               # routers (health, auth) + deps (get_current_user, require_admin)
+  api/               # routers (health, auth, sources, query) + deps (auth, embedder, llm)
   models/            # ORM models (users, repositories, sources, chunks, grants)
   retrieval/         # access-filtered vector search + question→chunks service
   llm/               # LLMProvider interface + Answer/Citation schema + Gemini/Anthropic providers + factory

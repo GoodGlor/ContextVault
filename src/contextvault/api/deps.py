@@ -13,6 +13,7 @@ from contextvault.core.tokens import InvalidToken, decode_access_token
 from contextvault.db.session import SessionLocal, get_session
 from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.embeddings.local import LocalEmbeddingProvider
+from contextvault.llm import LLMProvider, get_llm_provider
 from contextvault.models import Role, User
 from contextvault.services import users as user_service
 from contextvault.services.ingestion import SessionFactory
@@ -83,3 +84,12 @@ def get_ingestion_session_factory() -> SessionFactory:
     override it to run ingestion inside their transaction.
     """
     return SessionLocal
+
+
+def get_llm() -> LLMProvider:
+    """Dependency yielding the system-default ``LLMProvider`` (overridable in tests).
+
+    The RAG loop (card #19) generates through this seam; per-repo provider routing
+    (card #25) will later resolve the provider per repository instead.
+    """
+    return get_llm_provider()
