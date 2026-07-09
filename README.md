@@ -245,7 +245,7 @@ provider = get_llm_provider()               # honours LLM_PROVIDER (default: gem
 answer = await provider.answer(question, chunks)
 ```
 
-Both providers share the same behaviour: they lay the retrieved chunks out under
+All providers share the same behaviour: they lay the retrieved chunks out under
 `[1..n]` markers, instruct the model to answer **only** from them, and parse the
 `[n]` markers in the reply back into `Citation`s — no vendor-native citation
 feature is used, so the citation experience is identical across providers. Empty
@@ -253,8 +253,9 @@ feature is used, so the citation experience is identical across providers. Empty
 without an API call, and an answer that cites none of its sources is flagged the
 same way. That numbered-chunk prompt/parse/map machinery lives in one shared module,
 [`contextvault.llm.citations`](#numbered-chunk-citation-scheme), which every
-provider imports; per-repo routing across providers wires them all into the
-factory in a later card.
+provider imports. `get_llm_provider()` currently wires **Gemini** and **OpenAI**
+(selectable via `LLM_PROVIDER`); the Anthropic provider joins the factory when
+per-repo routing across providers lands in a later card.
 
 #### Google (Gemini) — default
 
@@ -263,6 +264,13 @@ Configuration (`.env` / settings): `GEMINI_API_KEY` authenticates the SDK
 (falling back to the SDK's own `GEMINI_API_KEY` / `GOOGLE_API_KEY` resolution),
 `GEMINI_MODEL` selects the model (default `gemini-2.5-flash`), and
 `LLM_MAX_TOKENS` caps the answer length.
+
+#### OpenAI (ChatGPT)
+
+`OpenAILLMProvider` (via the OpenAI SDK's Chat Completions API) is selectable with
+`LLM_PROVIDER=openai`. Configuration: `OPENAI_API_KEY` authenticates the SDK
+(falling back to the SDK's own `OPENAI_API_KEY` resolution), `OPENAI_MODEL`
+selects the model (default `gpt-4o`), and `LLM_MAX_TOKENS` caps the answer length.
 
 #### Anthropic (Claude)
 
@@ -290,8 +298,8 @@ from contextvault.llm.citations import (
 `parse_citations` reads the `[n]` markers back out of the model's answer and
 resolves each to its exact source span — taking markers in first-appearance
 order, collapsing repeats, and dropping any out-of-range (fabricated) marker so a
-`Citation` always points at a real retrieved passage. The Anthropic and Gemini
-providers (and the OpenAI/OpenRouter providers to come) only wire this scheme to
+`Citation` always points at a real retrieved passage. The Anthropic, Gemini, and
+OpenAI providers (and the OpenRouter provider to come) only wire this scheme to
 their vendor SDK.
 
 ## Source API (admin)
@@ -374,7 +382,7 @@ src/contextvault/
   api/               # routers (health, auth, sources, query) + deps (auth, embedder, llm)
   models/            # ORM models (users, repositories, sources, chunks, grants)
   retrieval/         # access-filtered vector search + question→chunks service
-  llm/               # LLMProvider interface + Answer/Citation schema + Gemini/Anthropic providers + factory
+  llm/               # LLMProvider interface + Answer/Citation schema + Gemini/OpenAI/Anthropic providers + factory
   services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini

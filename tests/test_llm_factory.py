@@ -11,10 +11,15 @@ import pytest
 
 from contextvault.llm import LLMProvider, get_llm_provider
 from contextvault.llm.gemini import GeminiLLMProvider
+from contextvault.llm.openai import OpenAILLMProvider
 
 
 def _stub_gemini_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("contextvault.llm.gemini.genai.Client", lambda **kwargs: object())
+
+
+def _stub_openai_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.llm.openai.AsyncOpenAI", lambda **kwargs: object())
 
 
 def test_default_provider_is_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,6 +38,14 @@ def test_explicit_name_overrides_configured_default(monkeypatch: pytest.MonkeyPa
     # Case-insensitive; explicit name wins regardless of the setting.
     provider: Any = get_llm_provider("GEMINI")
     assert isinstance(provider, GeminiLLMProvider)
+
+
+def test_openai_provider_selectable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_openai_client(monkeypatch)
+    # Case-insensitive selection, matching the other providers.
+    provider: Any = get_llm_provider("OpenAI")
+    assert isinstance(provider, OpenAILLMProvider)
+    assert isinstance(provider, LLMProvider)
 
 
 def test_unknown_provider_raises() -> None:
