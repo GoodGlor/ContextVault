@@ -18,8 +18,10 @@ The contract carries the project's two defining behaviors:
   providers return.
 - **Honest "not in this vault".** When retrieval surfaced nothing relevant
   (``chunks`` empty), a provider must say the answer isn't in the repository
-  rather than answering from the model's own training data — an ``Answer`` with
-  text but no citations.
+  rather than answering from the model's own training data. That refusal is a
+  first-class outcome: the returned ``Answer`` carries ``not_in_vault=True`` (and
+  no citations), so callers detect it by the flag, not by guessing from an empty
+  citation list.
 """
 
 import uuid
@@ -54,13 +56,17 @@ class Answer:
     """A grounded generation result: the answer text plus its citations.
 
     ``citations`` lists the markers referenced in ``text``, in marker order —
-    one per ``[n]`` the model used. An ``Answer`` with text but an empty
-    ``citations`` list is the honest "not in this vault" answer: retrieval found
-    nothing relevant, so nothing is cited.
+    one per ``[n]`` the model used. ``not_in_vault`` is the first-class honest
+    signal: ``True`` when the answer grounds nothing in the repository — either
+    retrieval surfaced no relevant chunks (short-circuit) or the model, given
+    chunks, cited none of them. Downstream (the query endpoint, the
+    knowledge-gap dashboard) reads this flag rather than inferring the refusal
+    from an empty ``citations`` list.
     """
 
     text: str
     citations: list[Citation]
+    not_in_vault: bool = False
 
 
 @runtime_checkable
@@ -75,7 +81,7 @@ class LLMProvider(Protocol):
         cite those markers, and returns each used marker as a ``Citation``
         resolved to its source span. When ``chunks`` is empty the provider must
         return the honest "not in this vault" answer — text explaining the
-        repository doesn't cover the question, and no citations — rather than
-        answering from the model's own knowledge.
+        repository doesn't cover the question, ``not_in_vault=True``, and no
+        citations — rather than answering from the model's own knowledge.
         """
         ...

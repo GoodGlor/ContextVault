@@ -15,6 +15,7 @@ from contextvault.llm.citations import (
     SYSTEM_PROMPT,
     build_user_message,
     format_sources,
+    not_in_vault_answer,
     parse_citations,
 )
 from contextvault.retrieval import RetrievedChunk
@@ -42,6 +43,14 @@ def test_system_prompt_states_the_grounding_contract() -> None:
 
 def test_not_in_vault_message_is_non_empty() -> None:
     assert NOT_IN_VAULT.strip()
+
+
+def test_not_in_vault_answer_is_the_flagged_honest_refusal() -> None:
+    """The shared short-circuit result: canonical text, no citations, flag set."""
+    answer = not_in_vault_answer()
+    assert answer.text == NOT_IN_VAULT
+    assert answer.citations == []
+    assert answer.not_in_vault is True
 
 
 def test_format_sources_numbers_chunks_from_one_in_order() -> None:

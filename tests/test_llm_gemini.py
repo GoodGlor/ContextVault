@@ -73,7 +73,16 @@ async def test_empty_chunks_short_circuits_without_calling_api() -> None:
 
     assert result.text
     assert result.citations == []
+    assert result.not_in_vault is True  # the outcome is a flagged refusal
     assert client.aio.models.calls == []  # the model is never consulted
+
+
+async def test_grounded_cited_answer_is_not_flagged() -> None:
+    client = _FakeClient(reply="Grounded. [1]")
+    result = await _provider(client).answer("q", [_chunk(0)])
+
+    assert result.citations
+    assert result.not_in_vault is False
 
 
 async def test_answer_returns_model_text() -> None:
@@ -149,9 +158,14 @@ async def test_out_of_range_markers_are_ignored() -> None:
 
 
 async def test_blank_response_text_yields_empty_answer() -> None:
-    """Gemini's ``response.text`` can be empty/None (e.g. a blocked response)."""
+    """Gemini's ``response.text`` can be empty/None (e.g. a blocked response).
+
+    Grounding nothing, it is flagged ``not_in_vault`` rather than passed off as a
+    grounded answer.
+    """
     client = _FakeClient(reply="")
     result = await _provider(client).answer("q", [_chunk(0)])
 
     assert result.text == ""
     assert result.citations == []
+    assert result.not_in_vault is True

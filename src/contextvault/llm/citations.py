@@ -20,7 +20,7 @@ when retrieval surfaced nothing relevant.
 import re
 from collections.abc import Sequence
 
-from contextvault.llm.base import Citation
+from contextvault.llm.base import Answer, Citation
 from contextvault.retrieval import RetrievedChunk
 
 # Grounding contract handed to the model. Kept blunt on purpose: answer only from
@@ -42,6 +42,15 @@ NOT_IN_VAULT = "I don't have anything on that in this repository."
 
 # A citation marker in the model's answer text: ``[1]``, ``[2]``, …
 _MARKER = re.compile(r"\[(\d+)\]")
+
+
+def not_in_vault_answer() -> Answer:
+    """The shared honest "not in this vault" result: no API call, no citations.
+
+    Providers return this the moment retrieval hands them no chunks, so the
+    refusal text and its ``not_in_vault`` flag are identical across every vendor.
+    """
+    return Answer(text=NOT_IN_VAULT, citations=[], not_in_vault=True)
 
 
 def format_sources(chunks: Sequence[RetrievedChunk]) -> str:

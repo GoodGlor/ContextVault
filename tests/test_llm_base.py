@@ -99,6 +99,17 @@ async def test_empty_chunks_yields_uncited_answer() -> None:
     assert result.citations == []
 
 
+def test_answer_is_grounded_by_default() -> None:
+    """A cited answer is a grounded one: ``not_in_vault`` is off unless set."""
+    answer = Answer(text="hi", citations=[])
+    assert answer.not_in_vault is False
+
+
+def test_answer_can_flag_not_in_vault() -> None:
+    answer = Answer(text="nope", citations=[], not_in_vault=True)
+    assert answer.not_in_vault is True
+
+
 def test_citation_allows_missing_offsets() -> None:
     """Chunks parsed without positions still cite (span is None)."""
     citation = Citation(

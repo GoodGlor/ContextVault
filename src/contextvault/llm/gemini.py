@@ -26,9 +26,9 @@ from google.genai import types
 from contextvault.core.config import get_settings
 from contextvault.llm.base import Answer
 from contextvault.llm.citations import (
-    NOT_IN_VAULT,
     SYSTEM_PROMPT,
     build_user_message,
+    not_in_vault_answer,
     parse_citations,
 )
 from contextvault.retrieval import RetrievedChunk
@@ -66,7 +66,7 @@ class GeminiLLMProvider:
         them, and resolves the ``[n]`` markers in the reply to ``Citation``s.
         """
         if not chunks:
-            return Answer(text=NOT_IN_VAULT, citations=[])
+            return not_in_vault_answer()
 
         response = await self._client.aio.models.generate_content(
             model=self._model,
@@ -79,4 +79,7 @@ class GeminiLLMProvider:
         # ``response.text`` concatenates the text parts; it is None when the model
         # returned no text (e.g. a safety-blocked response).
         text = (response.text or "").strip()
-        return Answer(text=text, citations=parse_citations(text, chunks))
+        citations = parse_citations(text, chunks)
+        # Citations are the proof of grounding: an answer that cites none of the
+        # sources grounds nothing, so flag it honestly rather than pass it off.
+        return Answer(text=text, citations=citations, not_in_vault=not citations)

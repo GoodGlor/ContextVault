@@ -70,7 +70,16 @@ async def test_empty_chunks_short_circuits_without_calling_api() -> None:
 
     assert result.text
     assert result.citations == []
+    assert result.not_in_vault is True  # the outcome is a flagged refusal
     assert client.messages.calls == []  # the model is never consulted
+
+
+async def test_grounded_cited_answer_is_not_flagged() -> None:
+    client = _FakeClient(reply="Grounded. [1]")
+    result = await _provider(client).answer("q", [_chunk(0)])
+
+    assert result.citations
+    assert result.not_in_vault is False
 
 
 async def test_answer_returns_model_text() -> None:
@@ -145,9 +154,14 @@ async def test_out_of_range_markers_are_ignored() -> None:
 
 
 async def test_uncited_answer_over_chunks_has_no_citations() -> None:
-    """Model answered without markers (e.g. couldn't ground it) → no citations."""
+    """Model answered without markers (e.g. couldn't ground it) → no citations.
+
+    An answer that grounds nothing is not a grounded answer, so it is flagged
+    ``not_in_vault`` — the honest signal downstream relies on.
+    """
     client = _FakeClient(reply="I can't find that in the provided sources.")
     result = await _provider(client).answer("q", [_chunk(0)])
 
     assert result.text
     assert result.citations == []
+    assert result.not_in_vault is True
