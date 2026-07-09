@@ -1,0 +1,276 @@
+"""Integration tests for the query endpoint — the full RAG loop (card #19).
+
+`POST /repositories/{id}/query` ties the pieces together: auth + active-grant
+check → access-filtered retrieval → provider generation → cited response. Driven
+with httpx.AsyncClient over the async ``db_session`` fixture (see
+test_sources_api). The embedder and the LLM provider are overridden so the loop
+runs offline: the FakeEmbedder makes every vector identical (so an uploaded doc
+is always retrievable), and the RecordingProvider records the chunks it was
+handed and returns a grounded, cited answer — proving retrieve→generate wiring
+without any network call.
+"""
+
+import uuid
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from contextvault.api.deps import get_embedder, get_ingestion_session_factory, get_llm
+from contextvault.core.config import get_settings
+from contextvault.db.session import get_session
+from contextvault.llm.base import Answer, Citation
+from contextvault.llm.citations import NOT_IN_VAULT, not_in_vault_answer
+from contextvault.main import create_app
+from contextvault.models import Grant, Repository, Role, User
+from contextvault.retrieval import RetrievedChunk
+from contextvault.services import users as user_service
+
+
+class FakeEmbedder:
+    """Deterministic embedder of the configured width, so vectors fit pgvector.
+
+    Every text maps to the same vector, so any uploaded chunk is a perfect match
+    for any question — retrieval always returns the repo's chunks.
+    """
+
+    def __init__(self, dimension: int) -> None:
+        self._dimension = dimension
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return [[0.1] * self._dimension for _ in texts]
+
+
+class RecordingProvider:
+    """Fake ``LLMProvider``: records the chunks it got, returns a cited answer.
+
+    Mirrors the real providers' honest short-circuit — no chunks yields the
+    ``not_in_vault`` answer — so the endpoint's empty-retrieval path is exercised
+    exactly as production behaves.
+    """
+
+    def __init__(self) -> None:
+        self.received: list[RetrievedChunk] | None = None
+
+    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+        self.received = list(chunks)
+        if not chunks:
+            return not_in_vault_answer()
+        first = chunks[0]
+        citation = Citation(
+            number=1,
+            chunk_id=first.chunk_id,
+            source_id=first.source_id,
+            char_start=first.char_start,
+            char_end=first.char_end,
+        )
+        return Answer(text="Grounded answer [1].", citations=[citation], not_in_vault=False)
+
+
+def _fixed_factory(session: AsyncSession):  # type: ignore[no-untyped-def]
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[AsyncSession]:
+        yield session
+
+    return factory
+
+
+@pytest.fixture
+def provider() -> RecordingProvider:
+    return RecordingProvider()
+
+
+@pytest.fixture
+async def client(
+    db_session: AsyncSession, provider: RecordingProvider
+) -> AsyncGenerator[AsyncClient, None]:
+    app = create_app()
+
+    async def _use_test_session() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = _use_test_session
+    app.dependency_overrides[get_embedder] = lambda: FakeEmbedder(get_settings().embedding_dim)
+    app.dependency_overrides[get_ingestion_session_factory] = lambda: _fixed_factory(db_session)
+    app.dependency_overrides[get_llm] = lambda: provider
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+async def _user(db_session: AsyncSession, role: Role, username: str) -> User:
+    return await user_service.create_user(db_session, username=username, password="pw", role=role)
+
+
+async def _token(client: AsyncClient, username: str) -> str:
+    resp = await client.post("/auth/login", json={"username": username, "password": "pw"})
+    return str(resp.json()["access_token"])
+
+
+async def _repo(db_session: AsyncSession) -> Repository:
+    repo = Repository(name="Vault")
+    db_session.add(repo)
+    await db_session.flush()
+    return repo
+
+
+async def _grant(
+    db_session: AsyncSession,
+    user_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    *,
+    expires_at: datetime | None = None,
+) -> None:
+    db_session.add(Grant(user_id=user_id, repository_id=repository_id, expires_at=expires_at))
+    await db_session.flush()
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _upload(client: AsyncClient, repo_id: uuid.UUID, admin_token: str, body: bytes) -> None:
+    """Upload a document as admin, running ingestion inline (via the overrides)."""
+    resp = await client.post(
+        f"/repositories/{repo_id}/sources",
+        files={"file": ("policy.txt", body, "text/plain")},
+        headers=_auth(admin_token),
+    )
+    assert resp.status_code == 201
+
+
+async def test_query_requires_authentication(db_session: AsyncSession, client: AsyncClient) -> None:
+    repo = await _repo(db_session)
+    resp = await client.post(f"/repositories/{repo.id}/query", json={"question": "anything?"})
+    assert resp.status_code == 401
+
+
+async def test_query_unknown_repository_404(db_session: AsyncSession, client: AsyncClient) -> None:
+    await _user(db_session, Role.USER, "u404")
+    token = await _token(client, "u404")
+    resp = await client.post(
+        f"/repositories/{uuid.uuid4()}/query",
+        json={"question": "anything?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 404
+
+
+async def test_query_forbidden_without_grant(db_session: AsyncSession, client: AsyncClient) -> None:
+    # Access is enforced: a real repo the user was never granted is denied.
+    repo = await _repo(db_session)
+    await _user(db_session, Role.USER, "ungranted")
+    token = await _token(client, "ungranted")
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "anything?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 403
+
+
+async def test_query_forbidden_when_grant_expired(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    user = await _user(db_session, Role.USER, "expired")
+    await _grant(
+        db_session,
+        user.id,
+        repo.id,
+        expires_at=datetime.now(UTC) - timedelta(hours=1),
+    )
+    token = await _token(client, "expired")
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "anything?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 403
+
+
+async def test_query_rejects_empty_question(db_session: AsyncSession, client: AsyncClient) -> None:
+    repo = await _repo(db_session)
+    user = await _user(db_session, Role.USER, "blankq")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "blankq")
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": ""},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 422
+
+
+async def test_query_returns_grounded_cited_answer(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "admin1")
+    admin_token = await _token(client, "admin1")
+    await _upload(client, repo.id, admin_token, b"The vault stores curated policy documents.")
+
+    user = await _user(db_session, Role.USER, "reader")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "reader")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What does the vault store?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["answer"] == "Grounded answer [1]."
+    assert body["not_in_vault"] is False
+
+    # One citation, resolving [1] to a real retrieved chunk + its source.
+    assert len(body["citations"]) == 1
+    citation = body["citations"][0]
+    assert citation["number"] == 1
+    assert citation["chunk_id"]
+    assert citation["source_id"]
+
+    # Source references list the cited document so the UI can link to it.
+    assert len(body["sources"]) == 1
+    source = body["sources"][0]
+    assert source["id"] == citation["source_id"]
+    assert source["title"] == "policy.txt"
+    assert source["original_filename"] == "policy.txt"
+
+    # The provider was grounded on the retrieved chunks, not the raw question.
+    assert provider.received is not None
+    assert len(provider.received) >= 1
+
+
+async def test_query_not_in_vault_when_no_relevant_chunks(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # Granted, but the repo has no sources — retrieval is empty, so the honest
+    # "not in this vault" answer comes back flagged, with no citations/sources.
+    repo = await _repo(db_session)
+    user = await _user(db_session, Role.USER, "emptyvault")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "emptyvault")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What is not here?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["not_in_vault"] is True
+    assert body["answer"] == NOT_IN_VAULT
+    assert body["citations"] == []
+    assert body["sources"] == []
+    assert provider.received == []
