@@ -247,9 +247,10 @@ Both providers share the same behaviour: they lay the retrieved chunks out under
 `[n]` markers in the reply back into `Citation`s — no vendor-native citation
 feature is used, so the citation experience is identical across providers. Empty
 `chunks` short-circuit to the honest "not in this vault" answer without an API
-call. Each provider carries a self-contained copy of the numbered-chunk
-prompt/parse/map; a later card unifies that scheme, and per-repo routing across
-providers wires them all into the factory.
+call. That numbered-chunk prompt/parse/map machinery lives in one shared module,
+[`contextvault.llm.citations`](#numbered-chunk-citation-scheme), which every
+provider imports; per-repo routing across providers wires them all into the
+factory in a later card.
 
 #### Google (Gemini) — default
 
@@ -265,6 +266,28 @@ Configuration (`.env` / settings): `GEMINI_API_KEY` authenticates the SDK
 today and joins `get_llm_provider()` when provider routing lands. Configuration:
 `ANTHROPIC_API_KEY` authenticates the SDK, `ANTHROPIC_MODEL` selects the Claude
 model (default `claude-opus-4-8`), and `LLM_MAX_TOKENS` caps the answer length.
+
+#### Numbered-chunk citation scheme
+
+The one place the citation machinery lives — every provider imports it, so
+citations behave identically no matter which vendor generated the answer:
+
+```python
+from contextvault.llm.citations import (
+    SYSTEM_PROMPT,        # grounding contract: answer only from the numbered sources
+    NOT_IN_VAULT,         # honest answer returned (no API call) when chunks is empty
+    build_user_message,   # lays chunks out as [1..n] sources + the question
+    parse_citations,      # maps the [n] markers in the reply back to source spans
+)
+```
+
+`build_user_message` numbers the retrieved chunks `[1..n]` in rank order;
+`parse_citations` reads the `[n]` markers back out of the model's answer and
+resolves each to its exact source span — taking markers in first-appearance
+order, collapsing repeats, and dropping any out-of-range (fabricated) marker so a
+`Citation` always points at a real retrieved passage. The Anthropic and Gemini
+providers (and the OpenAI/OpenRouter providers to come) only wire this scheme to
+their vendor SDK.
 
 ## Source API (admin)
 
