@@ -224,10 +224,13 @@ Citation(number=1, chunk_id=…, source_id=…, char_start=120, char_end=170)
 ```
 
 `char_start`/`char_end` are `None` when the cited chunk had no positional offsets.
-An `Answer` with text but **no citations** is the honest "not in this vault"
-response: when `chunks` is empty, a provider states the repository doesn't cover
-the question instead of answering from the model's own training data (design spec
-§4).
+An `Answer` also carries a **`not_in_vault`** flag — the first-class honest "not in
+this vault" signal. It is `True` when the answer grounds nothing in the repository:
+either retrieval surfaced no relevant chunks (the provider short-circuits) or the
+model, given chunks, cited none of them. Downstream — the query endpoint and the
+knowledge-gap dashboard — reads this flag rather than inferring the refusal from an
+empty citation list, so a curated vault states it doesn't cover the question
+instead of answering from the model's own training data (design spec §4).
 
 ### Providers and default selection
 
@@ -246,8 +249,9 @@ Both providers share the same behaviour: they lay the retrieved chunks out under
 `[1..n]` markers, instruct the model to answer **only** from them, and parse the
 `[n]` markers in the reply back into `Citation`s — no vendor-native citation
 feature is used, so the citation experience is identical across providers. Empty
-`chunks` short-circuit to the honest "not in this vault" answer without an API
-call. That numbered-chunk prompt/parse/map machinery lives in one shared module,
+`chunks` short-circuit to the honest "not in this vault" answer (`not_in_vault=True`)
+without an API call, and an answer that cites none of its sources is flagged the
+same way. That numbered-chunk prompt/parse/map machinery lives in one shared module,
 [`contextvault.llm.citations`](#numbered-chunk-citation-scheme), which every
 provider imports; per-repo routing across providers wires them all into the
 factory in a later card.
@@ -275,7 +279,8 @@ citations behave identically no matter which vendor generated the answer:
 ```python
 from contextvault.llm.citations import (
     SYSTEM_PROMPT,        # grounding contract: answer only from the numbered sources
-    NOT_IN_VAULT,         # honest answer returned (no API call) when chunks is empty
+    NOT_IN_VAULT,         # the honest refusal text
+    not_in_vault_answer,  # the flagged (not_in_vault=True) refusal Answer, no API call
     build_user_message,   # lays chunks out as [1..n] sources + the question
     parse_citations,      # maps the [n] markers in the reply back to source spans
 )
