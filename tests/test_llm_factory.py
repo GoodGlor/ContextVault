@@ -12,6 +12,7 @@ import pytest
 from contextvault.llm import LLMProvider, get_llm_provider
 from contextvault.llm.gemini import GeminiLLMProvider
 from contextvault.llm.openai import OpenAILLMProvider
+from contextvault.llm.openrouter import OpenRouterLLMProvider
 
 
 def _stub_gemini_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -20,6 +21,10 @@ def _stub_gemini_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _stub_openai_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("contextvault.llm.openai.AsyncOpenAI", lambda **kwargs: object())
+
+
+def _stub_openrouter_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.llm.openrouter.AsyncOpenAI", lambda **kwargs: object())
 
 
 def test_default_provider_is_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,6 +50,14 @@ def test_openai_provider_selectable(monkeypatch: pytest.MonkeyPatch) -> None:
     # Case-insensitive selection, matching the other providers.
     provider: Any = get_llm_provider("OpenAI")
     assert isinstance(provider, OpenAILLMProvider)
+    assert isinstance(provider, LLMProvider)
+
+
+def test_openrouter_provider_selectable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_openrouter_client(monkeypatch)
+    # Case-insensitive selection, matching the other providers.
+    provider: Any = get_llm_provider("OpenRouter")
+    assert isinstance(provider, OpenRouterLLMProvider)
     assert isinstance(provider, LLMProvider)
 
 

@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-opus-4-8"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    # OpenRouter is OpenAI-compatible: the same wire format reached through its
+    # gateway. Model ids are vendor-namespaced (e.g. ``openai/gpt-4o``,
+    # ``anthropic/claude-3.5-sonnet``); ``openrouter_base_url`` is the OpenAI
+    # SDK's ``base_url`` override that points the client at the gateway.
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "openai/gpt-4o"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     llm_max_tokens: int = 2048
 
     # JWT session tokens.

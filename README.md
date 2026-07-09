@@ -253,9 +253,9 @@ feature is used, so the citation experience is identical across providers. Empty
 without an API call, and an answer that cites none of its sources is flagged the
 same way. That numbered-chunk prompt/parse/map machinery lives in one shared module,
 [`contextvault.llm.citations`](#numbered-chunk-citation-scheme), which every
-provider imports. `get_llm_provider()` currently wires **Gemini** and **OpenAI**
-(selectable via `LLM_PROVIDER`); the Anthropic provider joins the factory when
-per-repo routing across providers lands in a later card.
+provider imports. `get_llm_provider()` currently wires **Gemini**, **OpenAI**, and
+**OpenRouter** (selectable via `LLM_PROVIDER`); the Anthropic provider joins the
+factory when per-repo routing across providers lands in a later card.
 
 #### Google (Gemini) — default
 
@@ -271,6 +271,19 @@ Configuration (`.env` / settings): `GEMINI_API_KEY` authenticates the SDK
 `LLM_PROVIDER=openai`. Configuration: `OPENAI_API_KEY` authenticates the SDK
 (falling back to the SDK's own `OPENAI_API_KEY` resolution), `OPENAI_MODEL`
 selects the model (default `gpt-4o`), and `LLM_MAX_TOKENS` caps the answer length.
+
+#### OpenRouter (OpenAI-compatible gateway)
+
+`OpenRouterLLMProvider` reaches [OpenRouter](https://openrouter.ai) — a single
+gateway to hundreds of models — over the OpenAI-compatible wire format, so it
+**subclasses `OpenAILLMProvider`** and reuses its request shape and citation
+machinery unchanged; only the client is re-aimed at OpenRouter's base URL.
+Selectable with `LLM_PROVIDER=openrouter`. Configuration: `OPENROUTER_API_KEY`
+authenticates the SDK, `OPENROUTER_MODEL` selects the model — ids are
+vendor-namespaced, e.g. `openai/gpt-4o` (the default) or
+`anthropic/claude-3.5-sonnet` — `OPENROUTER_BASE_URL` overrides the gateway
+endpoint (default `https://openrouter.ai/api/v1`), and `LLM_MAX_TOKENS` caps the
+answer length.
 
 #### Anthropic (Claude)
 
@@ -298,9 +311,8 @@ from contextvault.llm.citations import (
 `parse_citations` reads the `[n]` markers back out of the model's answer and
 resolves each to its exact source span — taking markers in first-appearance
 order, collapsing repeats, and dropping any out-of-range (fabricated) marker so a
-`Citation` always points at a real retrieved passage. The Anthropic, Gemini, and
-OpenAI providers (and the OpenRouter provider to come) only wire this scheme to
-their vendor SDK.
+`Citation` always points at a real retrieved passage. The Anthropic, Gemini,
+OpenAI, and OpenRouter providers only wire this scheme to their vendor SDK.
 
 ## Source API (admin)
 
@@ -382,7 +394,7 @@ src/contextvault/
   api/               # routers (health, auth, sources, query) + deps (auth, embedder, llm)
   models/            # ORM models (users, repositories, sources, chunks, grants)
   retrieval/         # access-filtered vector search + question→chunks service
-  llm/               # LLMProvider interface + Answer/Citation schema + Gemini/OpenAI/Anthropic providers + factory
+  llm/               # LLMProvider interface + Answer/Citation schema + Gemini/OpenAI/OpenRouter/Anthropic providers + factory
   services/          # users, first-admin bootstrap
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
