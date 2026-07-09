@@ -13,8 +13,9 @@ The contract carries the project's two defining behaviors:
   and the model is told to cite those numbers. ``answer`` returns a ``Citation``
   per marker, mapping ``[n]`` back to the exact source passage (document +
   character span) the UI can jump to. The prompt/parse/map machinery that turns
-  a model's ``[n]`` markers into these citations is card #17; here we fix the
-  shape the providers return.
+  a model's ``[n]`` markers into these citations is the shared
+  ``contextvault.llm.citations`` scheme (card #17); here we fix the shape the
+  providers return.
 - **Honest "not in this vault".** When retrieval surfaced nothing relevant
   (``chunks`` empty), a provider must say the answer isn't in the repository
   rather than answering from the model's own training data — an ``Answer`` with

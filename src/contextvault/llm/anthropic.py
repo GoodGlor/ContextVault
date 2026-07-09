@@ -8,10 +8,10 @@ here rather than left to the model's goodwill:
   ``[1..n]`` markers and the system prompt tells the model to answer *only* from
   them and cite those numbers. The ``[n]`` markers the model emits are parsed
   back into ``Citation`` objects pointing at the exact source span, so the
-  citation experience is identical across every (future) provider — Claude's own
-  native-citation feature is deliberately unused. This provider carries a small,
-  self-contained version of that prompt/parse/map; card #17 generalises it into a
-  shared scheme reused by the OpenAI/Google providers.
+  citation experience is identical across every provider — Claude's own
+  native-citation feature is deliberately unused. That prompt/parse/map machinery
+  is the shared ``contextvault.llm.citations`` scheme (card #17); this provider
+  only wires it to the Anthropic SDK.
 - **Honest "not in this vault".** When retrieval surfaced nothing relevant the
   provider short-circuits — it returns the honest answer without spending an API
   call, so the model is never even given the chance to answer from training data.
@@ -20,69 +20,20 @@ The model defaults to ``claude-opus-4-8`` and is configurable (constructor arg o
 ``anthropic_model`` setting), per the card.
 """
 
-import re
 from collections.abc import Sequence
 
 from anthropic import AsyncAnthropic
 from anthropic.types import TextBlock
 
 from contextvault.core.config import get_settings
-from contextvault.llm.base import Answer, Citation
-from contextvault.retrieval import RetrievedChunk
-
-# Grounding contract handed to the model. Kept blunt on purpose: answer only from
-# the numbered sources, cite them by number, and be honest when they fall short.
-SYSTEM_PROMPT = (
-    "You are ContextVault's retrieval assistant. Answer the user's question using "
-    "ONLY the numbered sources provided in their message. Never use outside or "
-    "prior knowledge.\n\n"
-    "Cite every claim with the bracketed number of the source it draws from — "
-    "e.g. [1], or [2] — citing multiple sources where they apply.\n\n"
-    "If the sources do not contain the answer, say plainly that the answer is not "
-    "in this vault. Do not answer from your own knowledge, and do not invent "
-    "citations."
+from contextvault.llm.base import Answer
+from contextvault.llm.citations import (
+    NOT_IN_VAULT,
+    SYSTEM_PROMPT,
+    build_user_message,
+    parse_citations,
 )
-
-# Returned verbatim when retrieval found nothing relevant (no chunks) — the
-# honest "not in this vault" answer, produced without consulting the model.
-NOT_IN_VAULT = "I don't have anything on that in this repository."
-
-# A citation marker in the model's answer text: ``[1]``, ``[2]``, …
-_MARKER = re.compile(r"\[(\d+)\]")
-
-
-def _format_sources(chunks: Sequence[RetrievedChunk]) -> str:
-    """Lay the chunks out as ``[n] <content>`` blocks, numbered from 1."""
-    return "\n\n".join(f"[{i}] {chunk.content}" for i, chunk in enumerate(chunks, start=1))
-
-
-def _build_user_message(question: str, chunks: Sequence[RetrievedChunk]) -> str:
-    return f"Sources:\n{_format_sources(chunks)}\n\nQuestion: {question}"
-
-
-def _parse_citations(text: str, chunks: Sequence[RetrievedChunk]) -> list[Citation]:
-    """Map the ``[n]`` markers in ``text`` back to their source chunks.
-
-    Markers are taken in first-appearance order; repeats collapse to one citation
-    and markers outside ``1..len(chunks)`` (a fabricated or mis-numbered ``[n]``)
-    are dropped, so a citation always resolves to a real retrieved passage.
-    """
-    citations: dict[int, Citation] = {}
-    order: list[int] = []
-    for match in _MARKER.finditer(text):
-        number = int(match.group(1))
-        if number in citations or not 1 <= number <= len(chunks):
-            continue
-        chunk = chunks[number - 1]
-        citations[number] = Citation(
-            number=number,
-            chunk_id=chunk.chunk_id,
-            source_id=chunk.source_id,
-            char_start=chunk.char_start,
-            char_end=chunk.char_end,
-        )
-        order.append(number)
-    return [citations[number] for number in order]
+from contextvault.retrieval import RetrievedChunk
 
 
 class AnthropicLLMProvider:
@@ -123,9 +74,9 @@ class AnthropicLLMProvider:
             model=self._model,
             max_tokens=self._max_tokens,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _build_user_message(question, chunks)}],
+            messages=[{"role": "user", "content": build_user_message(question, chunks)}],
         )
         text = "".join(
             block.text for block in message.content if isinstance(block, TextBlock)
         ).strip()
-        return Answer(text=text, citations=_parse_citations(text, chunks))
+        return Answer(text=text, citations=parse_citations(text, chunks))
