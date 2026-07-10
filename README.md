@@ -356,6 +356,32 @@ background, so poll `GET /sources/{id}` to watch it move to `done` (or `failed`,
 `ingest_error` set). The embedding provider is injected via a dependency
 (`get_embedder`), defaulting to the local model.
 
+## Repository LLM configuration (admin)
+
+Each repository chooses its own LLM — there is no system default, so a repository
+must be configured before it can answer (design spec §3). Admin-only endpoints
+set and read that config; non-admins get `403`.
+
+| Method & path | Purpose |
+|---|---|
+| `PUT /repositories/{id}/llm-config` | Set (or replace) the repo's `provider`, `model`, and `api_key`. Returns the config with the key **masked**. |
+| `GET /repositories/{id}/llm-config` | Read the repo's config (`configured` flag; key masked; `null` fields when unconfigured). |
+
+`provider` is one of `gemini` / `openai` / `openrouter` / `anthropic`. The
+`api_key` is **encrypted at rest** on write (Fernet, see *Provider API-key
+encryption*) and **never returned in full** — responses carry only
+`api_key_masked` (`sk-…•••4f2a`), produced by decrypting in memory just long
+enough to keep the prefix/suffix:
+
+```json
+{"provider": "openai", "model": "gpt-4o", "api_key_masked": "sk-…•••4f2a", "configured": true}
+```
+
+Setting the config requires `ENCRYPTION_KEY` to be present (encryption fails
+loudly rather than storing plaintext). Routing generation to each repo's
+configured provider is a later card; today the config is stored and gates
+querying (below), while generation still flows through the system default.
+
 ## Query API (the full RAG loop)
 
 One endpoint runs the whole loop end-to-end — authenticate, enforce access,
@@ -369,7 +395,9 @@ Any authenticated user may call it, but access is enforced up front: the
 repository must exist (`404` otherwise) and the caller must hold an **active
 grant** on it (`403` otherwise — the same grant predicate the retrieval query
 enforces at the SQL level, surfaced here as an explicit denial rather than an
-empty result). An expired grant is treated as no grant.
+empty result). An expired grant is treated as no grant. The repository must also
+have its **LLM configured** (`409` otherwise, with a message to configure a
+provider, model, and key — see *Repository LLM configuration*).
 
 Past the gate the loop is: embed the question → access-filtered, thresholded
 retrieval → generate through the system-default `LLMProvider` (the `get_llm`

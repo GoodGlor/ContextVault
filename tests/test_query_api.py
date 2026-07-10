@@ -21,11 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_embedder, get_ingestion_session_factory, get_llm
 from contextvault.core.config import get_settings
+from contextvault.core.crypto import encrypt
 from contextvault.db.session import get_session
 from contextvault.llm.base import Answer, Citation
 from contextvault.llm.citations import NOT_IN_VAULT, not_in_vault_answer
 from contextvault.main import create_app
-from contextvault.models import Grant, Repository, Role, User
+from contextvault.models import Grant, LLMProviderName, Repository, Role, User
 from contextvault.retrieval import RetrievedChunk
 from contextvault.services import users as user_service
 
@@ -115,8 +116,14 @@ async def _token(client: AsyncClient, username: str) -> str:
     return str(resp.json()["access_token"])
 
 
-async def _repo(db_session: AsyncSession) -> Repository:
+async def _repo(db_session: AsyncSession, *, configured: bool = True) -> Repository:
     repo = Repository(name="Vault")
+    # A repository must have its LLM configured before it can answer (card #24);
+    # queries below drive the generation path, so configure it by default.
+    if configured:
+        repo.llm_provider = LLMProviderName.OPENAI
+        repo.llm_model = "gpt-4o"
+        repo.api_key_encrypted = encrypt("sk-test-key")
     db_session.add(repo)
     await db_session.flush()
     return repo
@@ -274,3 +281,24 @@ async def test_query_not_in_vault_when_no_relevant_chunks(
     assert body["citations"] == []
     assert body["sources"] == []
     assert provider.received == []
+
+
+async def test_query_rejects_unconfigured_repository(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # A granted user querying a repo with no LLM configured gets a clear error,
+    # not an answer — every repo must be configured before use (design spec §3).
+    repo = await _repo(db_session, configured=False)
+    user = await _user(db_session, Role.USER, "noconfig")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "noconfig")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "anything?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 409
+    assert "configure" in resp.json()["detail"].lower()
+    # Generation was never reached — the gate stops before the provider.
+    assert provider.received is None
