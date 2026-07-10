@@ -36,6 +36,11 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://contextvault:contextvault@localhost:5432/contextvault
       # >=32 bytes keeps PyJWT from emitting insecure-key warnings; CI-only value.
       SECRET_KEY: ci-secret-key-that-is-at-least-32-bytes-long
+      # A valid, throwaway Fernet key so the crypto suite (card #23) runs against a
+      # set key rather than conftest's per-run default — mirrors a real deployment,
+      # where ENCRYPTION_KEY must be present. Must be a real Fernet key: conftest
+      # uses setdefault, so this value is kept as-is. CI-only; never a real secret.
+      ENCRYPTION_KEY: Ofuwhr2AIGm2DIXxckgYPgmf3SMusMQ9E0F_T8wXBEM=
 
     steps:
       - uses: actions/checkout@v5
