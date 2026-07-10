@@ -70,6 +70,31 @@ uv run python -m contextvault.cli create-admin --username admin --password '<str
 uv run python -m contextvault.cli create-admin
 ```
 
+## Provider API-key encryption
+
+Provider API keys are live credentials, so they are **encrypted at rest** and only
+ever stored as ciphertext. `core/crypto.py` wraps Fernet (AES-128-CBC + HMAC,
+authenticated) behind three helpers:
+
+- `encrypt(plaintext)` / `decrypt(token)` — round-trip a secret to a URL-safe
+  ciphertext token and back. Encryption is non-deterministic (random IV per
+  message), and a tampered or wrong-key token raises `EncryptionError` rather than
+  returning garbage. Keys are decrypted into memory only at call time.
+- `mask_key(key)` — a display-safe preview (`sk-…•••4f2a`) for surfacing a stored
+  key in the UI/API without ever re-showing it in full.
+
+The master key comes from `ENCRYPTION_KEY` (a Fernet key) in the environment or
+secrets — never in the database or the code. It is unset by default: encryption
+fails loudly instead of silently storing plaintext, so it must be set before any
+provider key is persisted. Generate one with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Wiring these helpers into per-repository provider configuration lands with the
+repo-config card; this card provides the primitive.
+
 ## Embeddings
 
 Text is embedded through a pluggable `EmbeddingProvider`. v1 ships one local, free
@@ -389,6 +414,7 @@ src/contextvault/
   cli.py             # `python -m contextvault.cli` (create-admin bootstrap)
   core/config.py     # Settings (pydantic-settings, .env)
   core/security.py   # Argon2 password hashing
+  core/crypto.py     # Fernet encrypt/decrypt + mask for provider keys at rest
   core/tokens.py     # JWT create/decode
   db/                # Base metadata + async engine/session
   api/               # routers (health, auth, sources, query) + deps (auth, embedder, llm)

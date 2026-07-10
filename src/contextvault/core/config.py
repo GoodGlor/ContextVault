@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     llm_max_tokens: int = 2048
 
+    # Master key for encrypting provider API keys at rest (see core/crypto.py).
+    # A Fernet key sourced from env/secrets, never committed. Unset by default:
+    # encryption fails loudly rather than storing plaintext, so it must be set
+    # before any provider key is persisted. Generate one with
+    # ``python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"``.
+    encryption_key: str | None = None
+
     # JWT session tokens.
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
