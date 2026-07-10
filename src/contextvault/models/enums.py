@@ -10,6 +10,20 @@ class Role(enum.StrEnum):
     USER = "user"
 
 
+class LLMProviderName(enum.StrEnum):
+    """LLM provider a repository generates answers with (design spec §3).
+
+    Values match the ``get_llm_provider`` factory keys (see ``llm/__init__.py``),
+    so per-repo routing (card #25) resolves a stored provider directly. Every
+    repository must pick one before it can answer — there is no system default.
+    """
+
+    GEMINI = "gemini"
+    OPENAI = "openai"
+    OPENROUTER = "openrouter"
+    ANTHROPIC = "anthropic"
+
+
 class SourceKind(enum.StrEnum):
     """Kind of ingested source: an uploaded document or an admin-authored note."""
 
