@@ -51,11 +51,41 @@ uv run alembic revision -m "add X"   # new migration
 { "access_token": "…", "token_type": "bearer", "must_change_password": false }
 ```
 
-Send it as `Authorization: Bearer <token>` on protected routes. The
-`get_current_user` dependency resolves the token to a user (401 otherwise); build
-role guards with `require_role(...)` / `require_admin` (403 when the role is
-insufficient). Tune `ACCESS_TOKEN_EXPIRE_MINUTES` and set a strong `SECRET_KEY`
-(≥ 32 bytes) in production.
+Send it as `Authorization: Bearer <token>` on protected routes. Two auth
+dependencies resolve the token to a user (401 otherwise): `get_authenticated_user`
+does authentication only, while `get_current_user` adds the forced-password-change
+bounce (below) and is what every normal endpoint uses. Build role guards with
+`require_role(...)` / `require_admin` (they chain off `get_current_user`, so they
+enforce the bounce too; 403 when the role is insufficient). Tune
+`ACCESS_TOKEN_EXPIRE_MINUTES` and set a strong `SECRET_KEY` (≥ 32 bytes) in
+production.
+
+### Password recovery & forced change
+
+Account recovery is admin-issued (design spec §2):
+
+- `POST /users/{id}/reset-password` (**admin-only**) issues a **random temporary
+  password**, returned **once** in plaintext (only its hash is stored), and sets
+  the user's `must_change_password` flag. The admin hands the temp password over
+  and never learns the user's eventual real password.
+
+  ```json
+  { "temporary_password": "…", "must_change_password": true }
+  ```
+
+- **Enforcement:** while `must_change_password` is set, `get_current_user` bounces
+  the user with `403 Password change required before continuing` — so *every*
+  normal endpoint is blocked at the single auth chokepoint until the password is
+  changed. `login` (unauthenticated) and `change-password` are the only reachable
+  routes.
+
+- `POST /auth/change-password` (**authenticated**, the escape hatch) takes
+  `{"current_password", "new_password"}` (new password ≥ 8 chars), verifies the
+  current password, sets the new one, and **clears the flag**. It depends on
+  `get_authenticated_user`, so a bounced user can still reach it; it returns a
+  fresh token whose `must_change_password` is now false.
+
+An optional expiry on the temporary password is out of scope for this card.
 
 ## First-admin bootstrap
 

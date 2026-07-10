@@ -8,6 +8,7 @@ from contextvault.api.invitations import router as invitations_router
 from contextvault.api.query import router as query_router
 from contextvault.api.repositories import router as repositories_router
 from contextvault.api.sources import router as sources_router
+from contextvault.api.users import router as users_router
 from contextvault.core.config import get_settings
 
 
@@ -18,6 +19,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(invitations_router)
+    app.include_router(users_router)
     app.include_router(sources_router)
     app.include_router(repositories_router)
     app.include_router(query_router)
