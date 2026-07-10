@@ -259,15 +259,21 @@ instead of answering from the model's own training data (design spec §4).
 
 ### Providers and default selection
 
-`get_llm_provider()` returns the system-default provider, chosen by the
-`LLM_PROVIDER` setting (default **`gemini`**), so the RAG loop generates through
-the contract and never names a vendor SDK:
+`get_llm_provider()` builds a provider behind the shared contract, so callers
+never name a vendor SDK. Called bare it returns the system-default provider chosen
+by the `LLM_PROVIDER` setting (default **`gemini`**); called with a name — and
+optionally an `api_key` and `model` — it builds that specific provider, which is
+how per-repo routing constructs each repository's own LLM (see *Repository LLM
+configuration*). Omitted `api_key`/`model` fall back to the settings defaults:
 
 ```python
 from contextvault.llm import get_llm_provider
 
 provider = get_llm_provider()               # honours LLM_PROVIDER (default: gemini)
 answer = await provider.answer(question, chunks)
+
+# per-repo routing: a specific provider built from stored config
+repo_provider = get_llm_provider("openai", api_key=key, model="gpt-4o")
 ```
 
 All providers share the same behaviour: they lay the retrieved chunks out under
@@ -278,9 +284,9 @@ feature is used, so the citation experience is identical across providers. Empty
 without an API call, and an answer that cites none of its sources is flagged the
 same way. That numbered-chunk prompt/parse/map machinery lives in one shared module,
 [`contextvault.llm.citations`](#numbered-chunk-citation-scheme), which every
-provider imports. `get_llm_provider()` currently wires **Gemini**, **OpenAI**, and
-**OpenRouter** (selectable via `LLM_PROVIDER`); the Anthropic provider joins the
-factory when per-repo routing across providers lands in a later card.
+provider imports. `get_llm_provider()` wires all four providers — **Gemini**,
+**OpenAI**, **OpenRouter**, and **Anthropic** — selectable by name (or, for the
+system default, via `LLM_PROVIDER`).
 
 #### Google (Gemini) — default
 
@@ -312,10 +318,11 @@ answer length.
 
 #### Anthropic (Claude)
 
-`AnthropicLLMProvider` (via the official Anthropic SDK) is constructed directly
-today and joins `get_llm_provider()` when provider routing lands. Configuration:
-`ANTHROPIC_API_KEY` authenticates the SDK, `ANTHROPIC_MODEL` selects the Claude
-model (default `claude-opus-4-8`), and `LLM_MAX_TOKENS` caps the answer length.
+`AnthropicLLMProvider` (via the official Anthropic SDK) is selectable through
+`get_llm_provider("anthropic")` — the factory wire-up that lets a repository
+configured for Anthropic route to it. Configuration: `ANTHROPIC_API_KEY`
+authenticates the SDK, `ANTHROPIC_MODEL` selects the Claude model (default
+`claude-opus-4-8`), and `LLM_MAX_TOKENS` caps the answer length.
 
 #### Numbered-chunk citation scheme
 
@@ -378,9 +385,10 @@ enough to keep the prefix/suffix:
 ```
 
 Setting the config requires `ENCRYPTION_KEY` to be present (encryption fails
-loudly rather than storing plaintext). Routing generation to each repo's
-configured provider is a later card; today the config is stored and gates
-querying (below), while generation still flows through the system default.
+loudly rather than storing plaintext). At query time generation **routes to this
+stored config**: the endpoint decrypts the key in memory and builds the
+repository's own provider/model through `get_llm_provider(...)`, so each
+repository answers with the LLM it was configured for — never a shared default.
 
 ## Query API (the full RAG loop)
 
@@ -400,9 +408,9 @@ have its **LLM configured** (`409` otherwise, with a message to configure a
 provider, model, and key — see *Repository LLM configuration*).
 
 Past the gate the loop is: embed the question → access-filtered, thresholded
-retrieval → generate through the system-default `LLMProvider` (the `get_llm`
-dependency; per-repo routing is a later card) → resolve the `[n]` markers to
-source spans. The response is:
+retrieval → generate through the repository's **own configured provider** (built
+per request from its stored provider/model/decrypted key via the `get_llm_builder`
+dependency) → resolve the `[n]` markers to source spans. The response is:
 
 ```json
 {

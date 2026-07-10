@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from contextvault.llm import LLMProvider, get_llm_provider
+from contextvault.llm.anthropic import AnthropicLLMProvider
 from contextvault.llm.gemini import GeminiLLMProvider
 from contextvault.llm.openai import OpenAILLMProvider
 from contextvault.llm.openrouter import OpenRouterLLMProvider
@@ -25,6 +26,10 @@ def _stub_openai_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _stub_openrouter_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("contextvault.llm.openrouter.AsyncOpenAI", lambda **kwargs: object())
+
+
+def _stub_anthropic_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.llm.anthropic.AsyncAnthropic", lambda **kwargs: object())
 
 
 def test_default_provider_is_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,6 +64,29 @@ def test_openrouter_provider_selectable(monkeypatch: pytest.MonkeyPatch) -> None
     provider: Any = get_llm_provider("OpenRouter")
     assert isinstance(provider, OpenRouterLLMProvider)
     assert isinstance(provider, LLMProvider)
+
+
+def test_anthropic_provider_selectable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_anthropic_client(monkeypatch)
+    # Anthropic is a valid stored provider (design spec §3); per-repo routing
+    # (card #25) makes it constructible through the factory like the others.
+    provider: Any = get_llm_provider("Anthropic")
+    assert isinstance(provider, AnthropicLLMProvider)
+    assert isinstance(provider, LLMProvider)
+
+
+def test_supplied_model_and_key_thread_through_to_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Per-repo routing (card #25) passes each repository's model and decrypted key
+    # into the factory; they must reach the constructed provider rather than be
+    # dropped in favour of the process-wide settings defaults.
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "contextvault.llm.openai.AsyncOpenAI",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    provider: Any = get_llm_provider("openai", api_key="sk-repo-key", model="gpt-4o-mini")
+    assert provider._model == "gpt-4o-mini"
+    assert captured["api_key"] == "sk-repo-key"
 
 
 def test_unknown_provider_raises() -> None:

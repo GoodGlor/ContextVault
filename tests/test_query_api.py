@@ -19,9 +19,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.api.deps import get_embedder, get_ingestion_session_factory, get_llm
+from contextvault.api.deps import get_embedder, get_ingestion_session_factory, get_llm_builder
 from contextvault.core.config import get_settings
-from contextvault.core.crypto import encrypt
+from contextvault.core.crypto import decrypt, encrypt
 from contextvault.db.session import get_session
 from contextvault.llm.base import Answer, Citation
 from contextvault.llm.citations import NOT_IN_VAULT, not_in_vault_answer
@@ -75,6 +75,22 @@ class RecordingProvider:
         return Answer(text="Grounded answer [1].", citations=[citation], not_in_vault=False)
 
 
+class RecordingBuilder:
+    """Fake per-repo provider builder: records the repo it was asked to route for
+    and returns the fake provider. Standing in for ``build_repo_llm``, it proves the
+    endpoint hands the *repository's own* stored config to the builder (card #25)
+    instead of ignoring it for a process-wide default, as the pre-#25 seam did.
+    """
+
+    def __init__(self, provider: RecordingProvider) -> None:
+        self._provider = provider
+        self.built_for: list[Repository] = []
+
+    def __call__(self, repo: Repository) -> RecordingProvider:
+        self.built_for.append(repo)
+        return self._provider
+
+
 def _fixed_factory(session: AsyncSession):  # type: ignore[no-untyped-def]
     @asynccontextmanager
     async def factory() -> AsyncIterator[AsyncSession]:
@@ -89,8 +105,13 @@ def provider() -> RecordingProvider:
 
 
 @pytest.fixture
+def builder(provider: RecordingProvider) -> RecordingBuilder:
+    return RecordingBuilder(provider)
+
+
+@pytest.fixture
 async def client(
-    db_session: AsyncSession, provider: RecordingProvider
+    db_session: AsyncSession, builder: RecordingBuilder
 ) -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
 
@@ -100,7 +121,7 @@ async def client(
     app.dependency_overrides[get_session] = _use_test_session
     app.dependency_overrides[get_embedder] = lambda: FakeEmbedder(get_settings().embedding_dim)
     app.dependency_overrides[get_ingestion_session_factory] = lambda: _fixed_factory(db_session)
-    app.dependency_overrides[get_llm] = lambda: provider
+    app.dependency_overrides[get_llm_builder] = lambda: builder
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -284,7 +305,10 @@ async def test_query_not_in_vault_when_no_relevant_chunks(
 
 
 async def test_query_rejects_unconfigured_repository(
-    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+    db_session: AsyncSession,
+    client: AsyncClient,
+    provider: RecordingProvider,
+    builder: RecordingBuilder,
 ) -> None:
     # A granted user querying a repo with no LLM configured gets a clear error,
     # not an answer — every repo must be configured before use (design spec §3).
@@ -300,5 +324,34 @@ async def test_query_rejects_unconfigured_repository(
     )
     assert resp.status_code == 409
     assert "configure" in resp.json()["detail"].lower()
-    # Generation was never reached — the gate stops before the provider.
+    # Generation was never reached — the gate stops before a provider is even built.
+    assert builder.built_for == []
     assert provider.received is None
+
+
+async def test_query_routes_to_repository_configured_provider(
+    db_session: AsyncSession, client: AsyncClient, builder: RecordingBuilder
+) -> None:
+    # The endpoint builds its provider from THIS repository's stored config —
+    # provider, model, and the decrypted key — rather than a process-wide default
+    # (card #25, design spec §3/§4). Retrieval is empty here, but the provider is
+    # built before generation, so the routing decision is still observable.
+    repo = await _repo(db_session)  # openai / gpt-4o / sk-test-key
+    user = await _user(db_session, Role.USER, "router")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "router")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "anything?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+
+    assert len(builder.built_for) == 1
+    routed = builder.built_for[0]
+    assert routed.id == repo.id
+    assert routed.llm_provider == LLMProviderName.OPENAI
+    assert routed.llm_model == "gpt-4o"
+    assert routed.api_key_encrypted is not None
+    assert decrypt(routed.api_key_encrypted) == "sk-test-key"

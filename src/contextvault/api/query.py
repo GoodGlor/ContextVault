@@ -21,10 +21,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.api.deps import get_current_user, get_embedder, get_llm
+from contextvault.api.deps import RepoLLMBuilder, get_current_user, get_embedder, get_llm_builder
 from contextvault.db.session import get_session
 from contextvault.embeddings.base import EmbeddingProvider
-from contextvault.llm import Citation, LLMProvider
+from contextvault.llm import Citation
 from contextvault.models import Grant, Repository, Source, SourceKind, User
 from contextvault.retrieval import retrieve
 
@@ -112,7 +112,7 @@ async def query_repository(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     embedder: EmbeddingProvider = Depends(get_embedder),
-    provider: LLMProvider = Depends(get_llm),
+    build_provider: RepoLLMBuilder = Depends(get_llm_builder),
 ) -> QueryResponse:
     """Answer a question against one repository: retrieve → generate → cite.
 
@@ -129,9 +129,9 @@ async def query_repository(
             status_code=status.HTTP_403_FORBIDDEN, detail="No access to this repository"
         )
     # A repository must have its LLM configured before it can answer (card #24,
-    # design spec §3: no system default). Routing generation to that per-repo
-    # provider is card #25 — for now the check only gates access; generation
-    # still flows through the system-default ``get_llm`` seam below.
+    # design spec §3: no system default). Generation then routes to that per-repo
+    # provider (card #25): the request's provider is built from this repository's
+    # stored provider/model/key, never a process-wide default.
     if not repo.llm_configured:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -140,6 +140,7 @@ async def query_repository(
                 "provider, model, and API key before it can answer."
             ),
         )
+    provider = build_provider(repo)
 
     result = await retrieve(
         session,
