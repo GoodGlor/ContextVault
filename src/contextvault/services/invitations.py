@@ -71,9 +71,16 @@ async def accept_invitation(session: AsyncSession, *, token: str, password: str)
     false, unlike the temp-password recovery flow) and marks the invite accepted
     so it can never be reused. Raises :class:`InvalidInvitation` for any invalid
     token and :class:`UsernameTaken` if the username was claimed since issuance.
+
+    The invitation row is locked ``FOR UPDATE`` so single-use is enforced *by
+    design*, not incidentally: two concurrent redemptions of the same token
+    serialize, and the loser sees ``accepted_at`` already set and is rejected —
+    rather than both racing past the check into a duplicate-account error.
     """
     result = await session.execute(
-        sa.select(Invitation).where(Invitation.token_hash == hash_invite_token(token))
+        sa.select(Invitation)
+        .where(Invitation.token_hash == hash_invite_token(token))
+        .with_for_update()
     )
     invitation = result.scalar_one_or_none()
     if invitation is None or invitation.accepted_at is not None:
