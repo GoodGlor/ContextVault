@@ -28,11 +28,16 @@ _UNAUTHENTICATED = HTTPException(
 )
 
 
-async def get_current_user(
+async def get_authenticated_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: AsyncSession = Depends(get_session),
 ) -> User:
-    """Resolve the bearer token to the current user, or raise 401."""
+    """Resolve the bearer token to the current user, or raise 401.
+
+    Authentication only — it does *not* enforce the forced-password-change bounce,
+    so the change-password endpoint (the escape hatch) can depend on it while a
+    user is flagged. Normal endpoints use :func:`get_current_user` instead.
+    """
     if credentials is None:
         raise _UNAUTHENTICATED
     try:
@@ -44,6 +49,22 @@ async def get_current_user(
     user = await user_service.get_user_by_id(session, user_id)
     if user is None:
         raise _UNAUTHENTICATED
+    return user
+
+
+async def get_current_user(user: User = Depends(get_authenticated_user)) -> User:
+    """The authenticated user, bounced if they owe a forced password change (card #27).
+
+    A user with ``must_change_password`` set is stopped here — at the single auth
+    chokepoint every protected endpoint funnels through — so recovery (design spec
+    §2) forces the change before any normal request succeeds. The change-password
+    endpoint depends on :func:`get_authenticated_user` instead, so it stays usable.
+    """
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change required before continuing",
+        )
     return user
 
 
