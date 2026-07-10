@@ -70,6 +70,34 @@ uv run python -m contextvault.cli create-admin --username admin --password '<str
 uv run python -m contextvault.cli create-admin
 ```
 
+## Invitations (onboarding)
+
+New accounts are created by invite, so an admin never sees or handles a user's
+password (design spec §2). The flow is two endpoints:
+
+- `POST /invitations` (**admin-only**) issues a single-use, expiring invite for a
+  new `username` (optional `role`, default `user`; optional `expires_in_hours`,
+  default `INVITE_EXPIRY_HOURS` = 72). It returns the raw token **once** — for the
+  invite link — plus the username, role, and `expires_at`. A username that already
+  has an account is rejected (409).
+
+  ```json
+  { "token": "…", "username": "alice", "role": "user", "expires_at": "…" }
+  ```
+
+- `POST /invitations/accept` (**public**) redeems a token: `{"token", "password"}`
+  (password ≥ 8 chars). It creates the account with the user's own chosen password
+  (`must_change_password` stays false — distinct from the temp-password recovery
+  flow) and marks the invite spent. Returns the new `{id, username, role}` (201).
+
+The token is high-entropy and stored **only as a SHA-256 hash**
+(`core/invite_tokens.py`), so a leaked database never yields a usable invite — the
+raw token lives solely in the link handed out once (unlike provider keys, which are
+reversibly encrypted because they must be recovered; an invite is only ever
+compared). An invite is valid while unexpired **and** unaccepted; reused, expired,
+and unknown tokens all return one uniform `400 Invalid or expired invitation`, so a
+caller cannot probe which tokens exist.
+
 ## Provider API-key encryption
 
 Provider API keys are live credentials, so they are **encrypted at rest** and only
