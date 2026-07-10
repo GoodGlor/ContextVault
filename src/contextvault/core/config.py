@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Onboarding invitations (card #26). How long an issued invite link stays
+    # valid before it expires; the admin may override per-invite at issue time.
+    invite_expiry_hours: int = 72
+
     # First-admin bootstrap (see `python -m contextvault.cli create-admin`).
     initial_admin_username: str | None = None
     initial_admin_password: str | None = None
