@@ -8,9 +8,15 @@ reachable, keeping the pure-unit suite green in environments without Postgres.
 
 import os
 
+from cryptography.fernet import Fernet
+
 # A >=32-byte secret keeps PyJWT from emitting InsecureKeyLength warnings during
 # tests. Set before any settings are read. Production overrides via the env/.env.
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-at-least-32-bytes")
+
+# A valid Fernet master key so the crypto module can encrypt/decrypt in tests.
+# Production supplies its own via ENCRYPTION_KEY; this per-run key never persists.
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 
 from collections.abc import AsyncGenerator  # noqa: E402
 
