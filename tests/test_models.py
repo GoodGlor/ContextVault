@@ -12,6 +12,7 @@ from pgvector.sqlalchemy import Vector
 import contextvault.models  # noqa: F401
 from contextvault.core.config import get_settings
 from contextvault.db.base import Base
+from contextvault.models import LLMProviderName, Repository
 
 
 def _table(name: str) -> sa.Table:
@@ -50,6 +51,37 @@ def test_grants_link_users_and_repositories_with_expiry() -> None:
         if isinstance(c, sa.UniqueConstraint)
     }
     assert ("repository_id", "user_id") in uniques
+
+
+def test_repositories_carry_llm_config() -> None:
+    """Per-repo LLM config (card #24): provider (native enum), model, encrypted
+    key — all nullable, since a repository starts unconfigured (design spec §3)."""
+    repos = _table("repositories")
+    cols = repos.columns
+    assert {"llm_provider", "llm_model", "api_key_encrypted"} <= set(cols.keys())
+
+    provider_type = repos.c.llm_provider.type
+    assert isinstance(provider_type, sa.Enum)
+    assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic"}
+
+    # Unconfigured by default: every config column is nullable.
+    assert repos.c.llm_provider.nullable is True
+    assert repos.c.llm_model.nullable is True
+    assert repos.c.api_key_encrypted.nullable is True
+
+
+def test_repository_llm_configured_requires_all_three_fields() -> None:
+    """A repo is answerable only once provider, model, and key are all set — the
+    predicate the query endpoint gates on (design spec §3: no system default)."""
+    repo = Repository(name="Vault")
+    assert repo.llm_configured is False
+
+    repo.llm_provider = LLMProviderName.OPENAI
+    assert repo.llm_configured is False
+    repo.llm_model = "gpt-4o"
+    assert repo.llm_configured is False
+    repo.api_key_encrypted = "cipher"
+    assert repo.llm_configured is True
 
 
 def test_sources_belong_to_repository_and_have_kind() -> None:

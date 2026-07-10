@@ -128,6 +128,18 @@ async def query_repository(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="No access to this repository"
         )
+    # A repository must have its LLM configured before it can answer (card #24,
+    # design spec §3: no system default). Routing generation to that per-repo
+    # provider is card #25 — for now the check only gates access; generation
+    # still flows through the system-default ``get_llm`` seam below.
+    if not repo.llm_configured:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Repository has no LLM configured; an admin must configure a "
+                "provider, model, and API key before it can answer."
+            ),
+        )
 
     result = await retrieve(
         session,
