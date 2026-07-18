@@ -547,6 +547,24 @@ anonymizes their past questions to "asked by a deleted user" rather than erasing
 them, so the analytics signal survives the account. `repository_id` cascades — a
 repository's history dies with the repository.
 
+### Knowledge-gap dashboard
+
+The gaps a repository couldn't answer become the admin's curation to-do list
+(design spec §5). A **gap** is a logged query whose answer was the honest "not in
+this vault" (`not_in_vault = true` — retrieval was empty or too weak to ground).
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /repositories/{id}/knowledge-gaps` | **Admin-only.** Ranked, aggregated gaps for the repository. `?limit=` (1–200, default 50). `404` if the repo is unknown. |
+
+Similar questions are aggregated **case- and whitespace-insensitively** (a v1
+heuristic — lowercase, trim, collapse whitespace; not semantic clustering), so
+re-asks of the same topic merge into one row. Each row carries a representative
+question, `ask_count` (times asked), `user_count` (distinct known askers), and
+`last_asked_at`, ranked most-asked then most-recent — "N users asked about X, no
+source covers it." The admin closes a gap by writing an Admin Note (a source), and
+the next user who asks gets the answer automatically.
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
