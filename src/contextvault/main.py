@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from contextvault.api.analytics import router as analytics_router
 from contextvault.api.auth import router as auth_router
 from contextvault.api.grants import router as grants_router
 from contextvault.api.health import router as health_router
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(grants_router)
     app.include_router(query_router)
     app.include_router(knowledge_gaps_router)
+    app.include_router(analytics_router)
     return app
 
 
