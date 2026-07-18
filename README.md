@@ -87,6 +87,29 @@ Account recovery is admin-issued (design spec §2):
 
 An optional expiry on the temporary password is out of scope for this card.
 
+### Deleting a user
+
+Removing a user is destructive, so it is **confirmation-gated** and preserves
+analytics signal by anonymizing rather than erasing (design spec §2):
+
+- `DELETE /users/{id}` (**admin-only**) permanently deletes a user. The request
+  body must **echo the target's username** — `{"confirm_username": "<name>"}` — or
+  the call is a `400` no-op. Success returns `204 No Content`.
+
+- **Cascade vs. detach.** The user's access grants are **cascade-deleted** (their
+  access vanishes with the account), while their contributions are **detached**:
+  admin-authored sources keep existing with `created_by = NULL` ("by a deleted
+  user") instead of being deleted, so curation/analytics signal survives. This is
+  enforced at the database (`grants.user_id ON DELETE CASCADE`,
+  `sources.created_by ON DELETE SET NULL`).
+
+- **Last-admin guard.** Deleting the **last remaining admin** is refused with
+  `409 Conflict`, so the system can never be locked out of its bootstrap invariant.
+
+> Query-log anonymization (spec §2 "detach past questions") lands with query
+> logging (card #30): that table's `user_id` FK will be `ON DELETE SET NULL`, so
+> this same delete anonymizes those rows automatically once it exists.
+
 ## First-admin bootstrap
 
 Onboarding is invite-based, but the first admin has no one to invite them. Seed one

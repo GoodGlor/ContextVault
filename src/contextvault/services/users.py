@@ -63,9 +63,27 @@ async def change_password(session: AsyncSession, user: User, *, new_password: st
     await session.flush()
 
 
-async def admin_exists(session: AsyncSession) -> bool:
-    """Return True if at least one admin account exists."""
+async def count_admins(session: AsyncSession) -> int:
+    """Return how many admin accounts exist (used to guard the last-admin invariant)."""
     result = await session.execute(
         sa.select(sa.func.count()).select_from(User).where(User.role == Role.ADMIN)
     )
-    return (result.scalar_one() or 0) > 0
+    return int(result.scalar_one() or 0)
+
+
+async def admin_exists(session: AsyncSession) -> bool:
+    """Return True if at least one admin account exists."""
+    return await count_admins(session) > 0
+
+
+async def delete_user(session: AsyncSession, user: User) -> None:
+    """Permanently remove a user (admin action, card #28 / design spec §2).
+
+    The database does the anonymization: ``grants.user_id`` is ``ON DELETE
+    CASCADE`` (access vanishes with the account) while contributions like
+    ``sources.created_by`` are ``ON DELETE SET NULL`` (they survive, detached —
+    "by a deleted user") so analytics/curation signal is preserved rather than
+    erased. Callers gate this on confirmation and the last-admin check.
+    """
+    await session.delete(user)
+    await session.flush()
