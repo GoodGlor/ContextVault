@@ -51,7 +51,12 @@ class CitationResponse(BaseModel):
 
 
 class SourceReferenceResponse(BaseModel):
-    """A cited source document, so the client can label and link each citation."""
+    """A cited source document, so the client can label and link each citation.
+
+    ``verified`` marks an **Admin Note** — a human-authored answer (card #32) — so
+    the UI can show a *Verified* badge; ``author`` is the admin's nickname it is
+    cited to (null once that admin is deleted, or for uploaded documents).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +64,8 @@ class SourceReferenceResponse(BaseModel):
     title: str
     original_filename: str | None
     kind: SourceKind
+    verified: bool
+    author: str | None
 
 
 class QueryResponse(BaseModel):
@@ -89,7 +96,11 @@ async def _has_active_grant(
 async def _cited_sources(
     session: AsyncSession, citations: list[Citation]
 ) -> list[SourceReferenceResponse]:
-    """Load the distinct sources the citations point at, in first-cited order."""
+    """Load the distinct sources the citations point at, in first-cited order.
+
+    Admin Notes (card #32) are flagged ``verified`` and attributed to their author's
+    nickname, so the UI can render a *Verified* badge and "by <admin>".
+    """
     ordered_ids: list[uuid.UUID] = []
     for citation in citations:
         if citation.source_id not in ordered_ids:
@@ -99,11 +110,34 @@ async def _cited_sources(
 
     rows = (await session.execute(select(Source).where(Source.id.in_(ordered_ids)))).scalars().all()
     by_id = {source.id: source for source in rows}
-    return [
-        SourceReferenceResponse.model_validate(by_id[source_id])
-        for source_id in ordered_ids
-        if source_id in by_id
-    ]
+
+    # Resolve author nicknames for the cited Admin Notes in one query.
+    author_ids = {s.created_by for s in rows if s.kind is SourceKind.ADMIN_NOTE and s.created_by}
+    authors: dict[uuid.UUID, str] = {}
+    if author_ids:
+        author_rows = (
+            (await session.execute(select(User).where(User.id.in_(author_ids)))).scalars().all()
+        )
+        authors = {u.id: u.username for u in author_rows}
+
+    references: list[SourceReferenceResponse] = []
+    for source_id in ordered_ids:
+        source = by_id.get(source_id)
+        if source is None:
+            continue
+        verified = source.kind is SourceKind.ADMIN_NOTE
+        author = authors.get(source.created_by) if verified and source.created_by else None
+        references.append(
+            SourceReferenceResponse(
+                id=source.id,
+                title=source.title,
+                original_filename=source.original_filename,
+                kind=source.kind,
+                verified=verified,
+                author=author,
+            )
+        )
+    return references
 
 
 @router.post("/repositories/{repository_id}/query")

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,10 @@ from contextvault.models import Repository, Source, SourceKind, SourceStatus, Us
 from contextvault.services.ingestion import SessionFactory, run_ingestion
 
 router = APIRouter(tags=["sources"])
+
+# Admin Notes are ingested through the same parse→chunk→embed pipeline as uploads by
+# presenting their body as a plain-text document (the filename is not persisted).
+_ADMIN_NOTE_FILENAME = "admin-note.txt"
 
 
 class SourceResponse(BaseModel):
@@ -75,6 +79,59 @@ async def upload_source(
         source.id,
         filename=filename,
         data=data,
+        embedder=embedder,
+        session_factory=session_factory,
+    )
+    return SourceResponse.model_validate(source)
+
+
+class AdminNoteRequest(BaseModel):
+    """An admin-authored answer to index as a first-class, verified source."""
+
+    title: str = Field(min_length=1, max_length=512)
+    content: str = Field(min_length=1)
+
+
+@router.post(
+    "/repositories/{repository_id}/admin-notes",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_admin_note(
+    repository_id: uuid.UUID,
+    payload: AdminNoteRequest,
+    background_tasks: BackgroundTasks,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+    embedder: EmbeddingProvider = Depends(get_embedder),
+    session_factory: SessionFactory = Depends(get_ingestion_session_factory),
+) -> SourceResponse:
+    """Write an Admin Note and index it (card #32, design spec §5 — closes the gap
+    flywheel). The note becomes an ``admin_note`` source, attributed to the author,
+    and is ingested (chunk+embed) exactly like an upload so it is retrievable and
+    cited as a first-class, *Verified* source. To answer a knowledge gap, the admin
+    titles the note with the gap's question.
+    """
+    repo = await session.get(Repository, repository_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+
+    source = Source(
+        repository_id=repository_id,
+        kind=SourceKind.ADMIN_NOTE,
+        title=payload.title,
+        content=payload.content,
+        created_by=admin.id,
+        status=SourceStatus.PENDING,
+    )
+    session.add(source)
+    await session.commit()
+    await session.refresh(source)
+
+    background_tasks.add_task(
+        run_ingestion,
+        source.id,
+        filename=_ADMIN_NOTE_FILENAME,
+        data=payload.content.encode("utf-8"),
         embedder=embedder,
         session_factory=session_factory,
     )

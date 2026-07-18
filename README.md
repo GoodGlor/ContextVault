@@ -455,6 +455,7 @@ require an admin bearer token; non-admins get `403`.
 | Method & path | Purpose |
 |---|---|
 | `POST /repositories/{id}/sources` | Upload a document (multipart `file`). Creates the source `pending` and schedules background ingestion; returns `201` with the source. |
+| `POST /repositories/{id}/admin-notes` | Write an **Admin Note** (JSON `{"title": "...", "content": "..."}`). Creates an `admin_note` source attributed to the author and schedules ingestion; returns `201`. |
 | `GET /repositories/{id}/sources` | List a repository's sources (oldest first). |
 | `GET /sources/{id}` | Fetch one source, including `status` and `ingest_error`. |
 | `DELETE /sources/{id}` | Delete a source; its chunks cascade away. |
@@ -463,6 +464,21 @@ Upload returns immediately with `status: "pending"` — ingestion runs in the
 background, so poll `GET /sources/{id}` to watch it move to `done` (or `failed`, with
 `ingest_error` set). The embedding provider is injected via a dependency
 (`get_embedder`), defaulting to the local model.
+
+### Admin Notes (the curation flywheel)
+
+An **Admin Note** is an admin-authored answer that becomes a first-class source
+(design spec §5). It closes the knowledge-gap loop: the admin reads a gap (see
+*Knowledge-gap dashboard*), writes the answer — typically titling the note with the
+gap's question — and the note is ingested (chunk → embed → store) through the **same
+pipeline as uploads** (its body handled as plain text). From then on the next user
+who asks that question gets the answer automatically.
+
+A cited Admin Note is marked in the query response's `sources`: `kind` is
+`admin_note`, `verified` is `true` (the *Verified* badge), and `author` is the
+admin's nickname it is cited to (uploaded documents are `verified: false`,
+`author: null`). If the authoring admin is later deleted, the note survives with
+`author: null` — `created_by` is `ON DELETE SET NULL` (see *Deleting a user*).
 
 ## Repository LLM configuration (admin)
 
@@ -521,7 +537,7 @@ dependency) → resolve the `[n]` markers to source spans. The response is:
     {"number": 1, "chunk_id": "…", "source_id": "…", "char_start": 0, "char_end": 42}
   ],
   "sources": [
-    {"id": "…", "title": "policy.txt", "original_filename": "policy.txt", "kind": "document"}
+    {"id": "…", "title": "policy.txt", "original_filename": "policy.txt", "kind": "document", "verified": false, "author": null}
   ]
 }
 ```
