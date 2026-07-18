@@ -106,9 +106,10 @@ analytics signal by anonymizing rather than erasing (design spec §2):
 - **Last-admin guard.** Deleting the **last remaining admin** is refused with
   `409 Conflict`, so the system can never be locked out of its bootstrap invariant.
 
-> Query-log anonymization (spec §2 "detach past questions") lands with query
-> logging (card #30): that table's `user_id` FK will be `ON DELETE SET NULL`, so
-> this same delete anonymizes those rows automatically once it exists.
+> The user's **past questions are anonymized too** (spec §2 "detach past
+> questions"): the `query_logs.user_id` FK is `ON DELETE SET NULL`, so this same
+> delete detaches their logged queries ("asked by a deleted user") instead of
+> erasing them — the analytics signal survives the account (see *Query logging*).
 
 ## First-admin bootstrap
 
@@ -530,6 +531,21 @@ order), so the UI can label and link each `[n]`. When retrieval surfaces nothing
 relevant, the honest "not in this vault" behaviour carries through the provider
 untouched: `not_in_vault` is `true`, `answer` is the refusal text, and both
 `citations` and `sources` are empty — the endpoint never special-cases it.
+
+### Query logging
+
+Every answered query writes one `query_logs` row (design spec §5) — the raw
+material for the knowledge-gap dashboard and usage analytics. Each row records who
+asked (`user_id`), the repository, the question text, the retrieval signal
+(`top_score` — best similarity among retrievable chunks; `chunk_count` — how many
+cleared the relevance threshold), whether the answer was grounded (`not_in_vault`),
+and when (`created_at`). Only *answered* queries are logged: requests rejected at a
+pre-generation gate (`404`/`403`/`409`) never reach the log.
+
+`user_id` is `ON DELETE SET NULL`: deleting a user (see *Deleting a user*)
+anonymizes their past questions to "asked by a deleted user" rather than erasing
+them, so the analytics signal survives the account. `repository_id` cascades — a
+repository's history dies with the repository.
 
 ## Quality checks (Definition of Done)
 

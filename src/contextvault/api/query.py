@@ -27,6 +27,7 @@ from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.llm import Citation
 from contextvault.models import Grant, Repository, Source, SourceKind, User
 from contextvault.retrieval import retrieve
+from contextvault.services.query_log import log_query
 
 router = APIRouter(tags=["query"])
 
@@ -150,6 +151,20 @@ async def query_repository(
         embedder=embedder,
     )
     answer = await provider.answer(payload.question, result.chunks)
+
+    # Log the query — the raw material for the gap dashboard (#31) and analytics
+    # (#33): who asked, against which repo, the retrieval signal, and whether the
+    # answer was grounded. Persisted before returning so nothing is lost.
+    await log_query(
+        session,
+        user_id=user.id,
+        repository_id=repository_id,
+        question=payload.question,
+        top_score=result.top_score,
+        chunk_count=len(result.chunks),
+        not_in_vault=answer.not_in_vault,
+    )
+    await session.commit()
 
     return QueryResponse(
         answer=answer.text,
