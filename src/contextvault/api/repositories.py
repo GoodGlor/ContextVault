@@ -12,10 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.api.deps import require_admin
+from contextvault.api.deps import get_current_user, require_admin
 from contextvault.core.crypto import decrypt, encrypt, mask_key
 from contextvault.db.session import get_session
 from contextvault.models import LLMProviderName, Repository, User
+from contextvault.services import grants as grant_service
 
 router = APIRouter(tags=["repositories"])
 
@@ -26,6 +27,16 @@ class LLMConfigRequest(BaseModel):
     provider: LLMProviderName
     model: str = Field(min_length=1)
     api_key: str = Field(min_length=1)
+
+
+class RepositoryResponse(BaseModel):
+    """A repository as seen by a user choosing where to ask (their repo picker)."""
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+
+    model_config = {"from_attributes": True}
 
 
 class LLMConfigResponse(BaseModel):
@@ -54,6 +65,18 @@ async def _get_repo(session: AsyncSession, repository_id: uuid.UUID) -> Reposito
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
     return repo
+
+
+@router.get("/repositories")
+async def list_repositories(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[RepositoryResponse]:
+    """List the repositories the caller can actively reach (their granted, non-expired
+    repos) — the picker for "which vault do I ask?" (design spec §6). A user never
+    sees repositories they haven't been granted."""
+    repos = await grant_service.list_accessible_repositories(session, user.id)
+    return [RepositoryResponse.model_validate(r) for r in repos]
 
 
 @router.put("/repositories/{repository_id}/llm-config")
