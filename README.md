@@ -254,6 +254,25 @@ session (the request's is already closed by the time it runs) and delegates to
 `ingest_source`. The embedding call runs off the event loop so it doesn't block other
 requests.
 
+## Access grants (admin)
+
+Access is a per-user, per-repository **grant** (many-to-many), optionally
+time-boxed with an `expires_at` (design spec §6). An admin manages grants; every
+retrieval is hard-filtered to the caller's **active** (non-expired) grants.
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /repositories/{id}/grants` | **Admin-only.** Grant a user access: body `{"user_id": "…", "expires_at": "<ISO-8601>"\|null}`. **Idempotent** — re-granting the same pair updates the expiry (never a duplicate). `404` if the repo or user is unknown. |
+| `DELETE /repositories/{id}/grants/{user_id}` | **Admin-only.** Revoke a grant. `204` on success, `404` if no such grant. |
+| `GET /repositories/{id}/grants` | **Admin-only.** List every grant on a repository (including expired ones — the audit view). |
+| `GET /repositories` | **Any authenticated user.** The caller's repo picker: the repositories they hold an **active** grant on — never others', never expired ones. |
+
+A grant with `expires_at` in the past grants nothing: the repository disappears
+from `GET /repositories` and retrieval/query deny access with `403`. The
+active-grant rule (`expires_at IS NULL OR expires_at > now()`) is the same one the
+retrieval query and the query endpoint enforce, so management and enforcement never
+drift.
+
 ## Retrieval (access-filtered vector search)
 
 `search_chunks(session, user_id=…, repository_id=…, query_embedding=…)` is the
