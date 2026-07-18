@@ -10,6 +10,12 @@ import os
 
 from cryptography.fernet import Fernet
 
+# Ignore the developer's local .env during tests: settings come only from real
+# environment variables + code defaults, so a local override (e.g. OPENROUTER_MODEL)
+# can never bleed into the suite. Must be set before contextvault.core.config is
+# imported (it resolves the env-file choice at import time). See card #76.
+os.environ["CONTEXTVAULT_ENV_FILE"] = ""
+
 # A >=32-byte secret keeps PyJWT from emitting InsecureKeyLength warnings during
 # tests. Set before any settings are read. Production overrides via the env/.env.
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-at-least-32-bytes")

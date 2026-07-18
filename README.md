@@ -608,6 +608,12 @@ uv run mypy                           # strict type check
 uv run pytest                         # tests
 ```
 
+Tests are isolated from your local `.env`: settings come only from real environment
+variables and code defaults during the suite (`tests/conftest.py` sets
+`CONTEXTVAULT_ENV_FILE=""`), so a local override such as `OPENROUTER_MODEL` can never
+change a test's result. To point the app (not the suite) at a different env file, set
+`CONTEXTVAULT_ENV_FILE=/path/to/file` — empty disables `.env` loading entirely.
+
 ## Project layout
 
 ```

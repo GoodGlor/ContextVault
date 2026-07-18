@@ -1,15 +1,22 @@
 """Application settings, loaded from environment / .env."""
 
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Which .env file to load, resolved at import time. Defaults to ``.env``; set
+# ``CONTEXTVAULT_ENV_FILE`` to point elsewhere, or to an empty string to disable
+# .env loading entirely. Tests set it empty so a developer's local .env never bleeds
+# into the suite (settings then come only from real env vars + the defaults below).
+_ENV_FILE = os.getenv("CONTEXTVAULT_ENV_FILE", ".env") or None
 
 
 class Settings(BaseSettings):
     """Runtime configuration sourced from environment variables or a local .env."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
