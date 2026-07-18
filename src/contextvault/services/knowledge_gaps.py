@@ -20,13 +20,10 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.models import QueryLog
+from contextvault.services.query_log import normalized_question
 
-# Group questions that differ only in case or whitespace: lowercase, trim, and
-# collapse internal runs of whitespace to a single space. Not semantic clustering —
-# a deliberate v1 heuristic that merges obvious re-asks without an embedding pass.
-_NORMALIZED_QUESTION = sa.func.regexp_replace(
-    sa.func.lower(sa.func.btrim(QueryLog.question)), r"\s+", " ", "g"
-)
+# Group questions that differ only in case or whitespace (shared with analytics #33).
+_NORMALIZED_QUESTION = normalized_question(QueryLog.question)
 
 
 @dataclass(frozen=True)

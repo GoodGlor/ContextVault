@@ -581,6 +581,22 @@ question, `ask_count` (times asked), `user_count` (distinct known askers), and
 source covers it." The admin closes a gap by writing an Admin Note (a source), and
 the next user who asks gets the answer automatically.
 
+### Query analytics
+
+Usage insight for the admin, aggregated from the query log (design spec §5.4):
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /analytics` | **Admin-only.** One composite summary. `?top_limit=` (1–100, default 10) bounds the questions/users lists. |
+
+The response carries everything the dashboard needs in a single call:
+
+- `total_queries`, `answered`, `not_in_vault`, and `not_in_vault_rate` — the overall answered-vs-gap picture;
+- `per_repository` — query + gap counts per repo, busiest first ("which repos are active");
+- `top_questions` — most-asked questions (aggregated case/whitespace-insensitively, the same rule as the gap dashboard);
+- `active_users` — the most active **known** users (anonymized/deleted askers are excluded — "who's using what");
+- `by_day` — a daily time series of `total` vs `not_in_vault`, for the answered-vs-gap rate over time.
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
