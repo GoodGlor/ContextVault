@@ -602,7 +602,7 @@ The response carries everything the dashboard needs in a single call:
 The web UI lives in [`frontend/`](frontend/) — a Vite + React + TypeScript single-page
 app that talks to this backend over the REST/JSON API using JWT bearer auth. Card #34
 scaffolds the foundation (routing, API client, auth context, protected routes, base
-layout); card #35 adds the auth screens; the query experience (#36) builds on it.
+layout); card #35 adds the auth screens; card #36 adds the user query experience.
 
 ```bash
 cd frontend
@@ -641,6 +641,22 @@ in development (no CORS).
 **Token handling.** There is no refresh endpoint — a JWT simply expires. The client
 drops an expired token on load (no dead session mounts the app shell) and clears the
 session on any `401`, bouncing the user back to `/login`.
+
+**Query experience** (card #36, the app's home page `/`):
+
+- **Repo picker** — `GET /repositories` lists only the repos the user holds an active
+  grant on; a user with none is told so instead of shown an empty box.
+- **Ask + cited answer** — `POST /repositories/{id}/query` returns the answer, its
+  `[n]` citations, and the cited sources. The answer's inline `[n]` markers render as
+  clickable chips (`parseAnswer` splits them from text) that highlight and scroll to the
+  matching entry in the **Sources** panel. Each source shows its title, a **Verified**
+  badge + author for Admin Notes, and the citation's character span.
+- **Not in this vault** — when the response's `not_in_vault` is set, the turn shows an
+  explicit callout rather than dressing up the refusal as an answer.
+
+The click-through highlights the cited **source reference** (title, author, char span);
+it cannot yet render the raw passage text, because the backend exposes no user-facing
+source-content endpoint — that is a future backend card.
 
 **Frontend Definition of Done** (run from `frontend/`):
 
@@ -691,9 +707,10 @@ migrations/          # Alembic (env.py + versions/)
 alembic.ini
 tests/               # pytest suite
 frontend/            # React + Vite + TS single-page app (SPA)
-  src/api/           # typed fetch client (JWT, ApiError)
+  src/api/           # typed fetch client (JWT, ApiError) + endpoint modules
   src/auth/          # AuthProvider, useAuth, RequireAuth, JWT decode
-  src/pages/         # routed screens (login, change-password, home)
-  src/components/    # shared UI (Layout)
+  src/pages/         # routed screens (login, accept-invite, change-password, query)
+  src/query/         # answer parsing ([n] citation markers)
+  src/components/    # shared UI (Layout, AnswerText, SourceList, QueryTurn)
 docker-compose.yml   # local Postgres + pgvector
 ```
