@@ -15,6 +15,12 @@ dist/
 # Environment
 .env
 
+# Frontend (Node / Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/*.tsbuildinfo
+
 # OS / editors
 .DS_Store
 .idea/
