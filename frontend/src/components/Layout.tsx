@@ -21,6 +21,7 @@ export function Layout(): ReactNode {
         {session?.role === "admin" && (
           <nav className="app-nav">
             <Link to="/admin/repositories">Repositories</Link>
+            <Link to="/admin/sources">Sources</Link>
           </nav>
         )}
         {session && (

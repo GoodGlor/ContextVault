@@ -691,15 +691,21 @@ The click-through highlights the cited **source reference** (title, author, char
 it cannot yet render the raw passage text, because the backend exposes no user-facing
 source-content endpoint — that is a future backend card.
 
-**Admin surface** (card #37, admin-only pages, linked from the header nav for admins):
+**Admin surface** (cards #37–#38, admin-only pages, linked from the header nav for admins):
 
 - **Repositories** (`/admin/repositories`) — lists **all** repositories
   (`GET /admin/repositories`) with a Configured / Not configured badge; a form creates
   a new one (`POST /repositories`). Each repo expands to an **LLM config** editor that
   reads the current config (`GET …/llm-config`, key shown only masked) and sets a new
   `provider` / `model` / `api_key` (`PUT …/llm-config`). The key field is write-only —
-  it is never pre-filled, and the saved key comes back masked. The route is guarded by
-  `RequireAuth requireAdmin`, so non-admins are bounced home.
+  it is never pre-filled, and the saved key comes back masked.
+- **Sources** (`/admin/sources`) — pick a repository, then **upload** a document
+  (`POST …/sources`, multipart) and watch it ingest: the list (`GET …/sources`) shows
+  each source's status (`pending` → `processing` → `done` / `failed`) and **auto-polls**
+  while anything is still ingesting, stopping once every source is terminal. A failed
+  source shows its ingestion error; each can be **deleted** (`DELETE /sources/{id}`).
+
+Both routes are guarded by `RequireAuth requireAdmin`, so non-admins are bounced home.
 
 **Frontend Definition of Done** (run from `frontend/`):
 

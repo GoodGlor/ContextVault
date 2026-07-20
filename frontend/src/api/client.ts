@@ -51,7 +51,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.body !== undefined && !headers.has("Content-Type")) {
+  // JSON-encode by default, but leave FormData alone so the browser sets the
+  // multipart Content-Type (with its boundary) itself.
+  if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -78,6 +80,7 @@ export const api = {
       method: "PUT",
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+  upload: <T>(path: string, form: FormData) => apiFetch<T>(path, { method: "POST", body: form }),
   del: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, {
       method: "DELETE",
