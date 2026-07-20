@@ -96,4 +96,49 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("who")).toHaveTextContent("anon");
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
+
+  it("discards a stored session whose token has expired", () => {
+    const token = makeToken({ sub: "u-9", role: "user", exp: Math.floor(Date.now() / 1000) - 60 });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        token,
+        userId: "u-9",
+        role: "user",
+        username: "bob",
+        mustChangePassword: false,
+      }),
+    );
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    expect(screen.getByTestId("who")).toHaveTextContent("anon");
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("keeps a stored session whose token is still valid", () => {
+    const token = makeToken({
+      sub: "u-9",
+      role: "user",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        token,
+        userId: "u-9",
+        role: "user",
+        username: "bob",
+        mustChangePassword: false,
+      }),
+    );
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    expect(screen.getByTestId("who")).toHaveTextContent("bob:user");
+  });
 });

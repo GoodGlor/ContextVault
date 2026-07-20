@@ -602,7 +602,7 @@ The response carries everything the dashboard needs in a single call:
 The web UI lives in [`frontend/`](frontend/) — a Vite + React + TypeScript single-page
 app that talks to this backend over the REST/JSON API using JWT bearer auth. Card #34
 scaffolds the foundation (routing, API client, auth context, protected routes, base
-layout); the auth screens (#35) and the query experience (#36) build on it.
+layout); card #35 adds the auth screens; the query experience (#36) builds on it.
 
 ```bash
 cd frontend
@@ -625,8 +625,22 @@ in development (no CORS).
   `changePassword` via the `useAuth()` hook. `RequireAuth` gates routes on a session
   (and optionally an admin role); it mirrors the backend's forced-password-change bounce
   by redirecting flagged users to `/change-password`.
-- **Routing** (`src/App.tsx`) — public auth screens (`/login`, `/change-password`) sit
-  outside the protected `Layout` shell that wraps the app's authenticated pages.
+- **Routing** (`src/App.tsx`) — public auth screens (`/login`, `/accept-invite`,
+  `/change-password`) sit outside the protected `Layout` shell that wraps the app's
+  authenticated pages.
+
+**Auth screens** (card #35, `src/pages/`):
+
+- **Login** (`/login`) — username + password → `POST /auth/login`; a
+  `must_change_password` response routes the user to the change-password screen.
+- **Accept invite** (`/accept-invite?token=…`) — a new user chooses a password
+  (`POST /invitations/accept`) and is signed straight in with it, landing authenticated.
+- **Change password** (`/change-password`) — reachable voluntarily or via the forced-change
+  bounce; both new-password screens require a matching confirmation.
+
+**Token handling.** There is no refresh endpoint — a JWT simply expires. The client
+drops an expired token on load (no dead session mounts the app shell) and clears the
+session on any `401`, bouncing the user back to `/login`.
 
 **Frontend Definition of Done** (run from `frontend/`):
 
