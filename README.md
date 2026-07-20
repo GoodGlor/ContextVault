@@ -597,6 +597,49 @@ The response carries everything the dashboard needs in a single call:
 - `active_users` — the most active **known** users (anonymized/deleted askers are excluded — "who's using what");
 - `by_day` — a daily time series of `total` vs `not_in_vault`, for the answered-vs-gap rate over time.
 
+## Frontend (React SPA)
+
+The web UI lives in [`frontend/`](frontend/) — a Vite + React + TypeScript single-page
+app that talks to this backend over the REST/JSON API using JWT bearer auth. Card #34
+scaffolds the foundation (routing, API client, auth context, protected routes, base
+layout); the auth screens (#35) and the query experience (#36) build on it.
+
+```bash
+cd frontend
+npm install          # install dependencies
+npm run dev          # dev server at http://localhost:5173 (proxies /api -> :8000)
+```
+
+Run the backend (`uvicorn …` above) alongside `npm run dev`: the dev server proxies
+every `/api/*` request to `http://localhost:8000`, so the SPA and API share an origin
+in development (no CORS).
+
+**Architecture.**
+
+- **API client** (`src/api/client.ts`) — a typed `fetch` wrapper that prefixes `/api`,
+  attaches the bearer token, JSON-encodes bodies, and turns any non-2xx into a typed
+  `ApiError` carrying the backend's `detail`. A `401` clears the session (expired token
+  → back to login).
+- **Auth** (`src/auth/`) — `AuthProvider` holds the session (token + claims decoded from
+  the JWT + username), persists it to `localStorage`, and exposes `login` / `logout` /
+  `changePassword` via the `useAuth()` hook. `RequireAuth` gates routes on a session
+  (and optionally an admin role); it mirrors the backend's forced-password-change bounce
+  by redirecting flagged users to `/change-password`.
+- **Routing** (`src/App.tsx`) — public auth screens (`/login`, `/change-password`) sit
+  outside the protected `Layout` shell that wraps the app's authenticated pages.
+
+**Frontend Definition of Done** (run from `frontend/`):
+
+```bash
+npm run lint          # eslint
+npm run format:check  # prettier
+npm run typecheck     # tsc --noEmit
+npm test              # vitest
+npm run build         # tsc -b && vite build
+```
+
+CI runs these as a separate `frontend` job (see `.github/workflows/ci.yml`).
+
 ## Quality checks (Definition of Done)
 
 These are the commands every task's Definition of Done refers to:
@@ -633,5 +676,10 @@ src/contextvault/
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
 tests/               # pytest suite
+frontend/            # React + Vite + TS single-page app (SPA)
+  src/api/           # typed fetch client (JWT, ApiError)
+  src/auth/          # AuthProvider, useAuth, RequireAuth, JWT decode
+  src/pages/         # routed screens (login, change-password, home)
+  src/components/    # shared UI (Layout)
 docker-compose.yml   # local Postgres + pgvector
 ```
