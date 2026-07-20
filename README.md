@@ -22,6 +22,23 @@ cp .env.example .env
 
 ## Run
 
+### One command (local dev)
+
+`./dev.sh` brings up the whole stack: it ensures an `ENCRYPTION_KEY` in `.env`,
+starts the database, applies migrations, ensures an admin account with a **known**
+password, then launches the backend (`:8000`) and the frontend (`:5173`) together.
+Press `Ctrl+C` to stop both (the database keeps running).
+
+```bash
+./dev.sh
+# App:   http://localhost:5173   (login: admin / adminpass123)
+# Docs:  http://localhost:8000/docs
+```
+
+Override the seeded admin with `ADMIN_USER=me ADMIN_PASS=secret ./dev.sh`.
+
+### Manually
+
 ```bash
 # Start Postgres + pgvector
 docker compose up -d
