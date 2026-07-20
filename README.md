@@ -497,6 +497,21 @@ admin's nickname it is cited to (uploaded documents are `verified: false`,
 `author: null`). If the authoring admin is later deleted, the note survives with
 `author: null` — `created_by` is `ON DELETE SET NULL` (see *Deleting a user*).
 
+## Repository management (admin)
+
+Admins create repositories and see all of them; regular users only ever see the
+repositories they've been granted (design spec §3/§6). These endpoints are
+admin-only (`403` for non-admins):
+
+| Method & path | Purpose |
+|---|---|
+| `POST /repositories` | Create a repository. Body `{"name": "...", "description": "..."?}`; returns the repo with a `configured` flag (always `false` at creation). |
+| `GET /admin/repositories` | List **every** repository with its `configured` state — distinct from `GET /repositories`, which is scoped to the caller's granted repos. |
+
+A freshly created repository is unconfigured and cannot answer until an admin sets
+its LLM (below). `GET /admin/repositories` never includes key material — the key
+lives only behind the per-repo `llm-config` route, always masked.
+
 ## Repository LLM configuration (admin)
 
 Each repository chooses its own LLM — there is no system default, so a repository
@@ -619,7 +634,8 @@ The response carries everything the dashboard needs in a single call:
 The web UI lives in [`frontend/`](frontend/) — a Vite + React + TypeScript single-page
 app that talks to this backend over the REST/JSON API using JWT bearer auth. Card #34
 scaffolds the foundation (routing, API client, auth context, protected routes, base
-layout); card #35 adds the auth screens; card #36 adds the user query experience.
+layout); card #35 adds the auth screens; card #36 adds the user query experience;
+card #37 begins the admin surface (repository management + LLM config).
 
 ```bash
 cd frontend
@@ -674,6 +690,16 @@ session on any `401`, bouncing the user back to `/login`.
 The click-through highlights the cited **source reference** (title, author, char span);
 it cannot yet render the raw passage text, because the backend exposes no user-facing
 source-content endpoint — that is a future backend card.
+
+**Admin surface** (card #37, admin-only pages, linked from the header nav for admins):
+
+- **Repositories** (`/admin/repositories`) — lists **all** repositories
+  (`GET /admin/repositories`) with a Configured / Not configured badge; a form creates
+  a new one (`POST /repositories`). Each repo expands to an **LLM config** editor that
+  reads the current config (`GET …/llm-config`, key shown only masked) and sets a new
+  `provider` / `model` / `api_key` (`PUT …/llm-config`). The key field is write-only —
+  it is never pre-filled, and the saved key comes back masked. The route is guarded by
+  `RequireAuth requireAdmin`, so non-admins are bounced home.
 
 **Frontend Definition of Done** (run from `frontend/`):
 
