@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { QueryPage } from "./pages/QueryPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
+import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
 
 /** Top-level route table. Public auth screens sit outside the protected shell. */
 export function App(): ReactNode {
@@ -29,6 +30,14 @@ export function App(): ReactNode {
         }
       >
         <Route path="/" element={<QueryPage />} />
+        <Route
+          path="/admin/repositories"
+          element={
+            <RequireAuth requireAdmin>
+              <AdminRepositoriesPage />
+            </RequireAuth>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

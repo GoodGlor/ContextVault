@@ -18,6 +18,11 @@ export function Layout(): ReactNode {
         <Link to="/" className="app-brand">
           ContextVault
         </Link>
+        {session?.role === "admin" && (
+          <nav className="app-nav">
+            <Link to="/admin/repositories">Repositories</Link>
+          </nav>
+        )}
         {session && (
           <div className="app-user">
             <span className="app-username">{session.username}</span>

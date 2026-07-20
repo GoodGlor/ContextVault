@@ -10,6 +10,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_current_user, require_admin
@@ -29,6 +30,13 @@ class LLMConfigRequest(BaseModel):
     api_key: str = Field(min_length=1)
 
 
+class RepositoryCreateRequest(BaseModel):
+    """Admin-supplied details for a new repository (card #37)."""
+
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+
+
 class RepositoryResponse(BaseModel):
     """A repository as seen by a user choosing where to ask (their repo picker)."""
 
@@ -37,6 +45,30 @@ class RepositoryResponse(BaseModel):
     description: str | None
 
     model_config = {"from_attributes": True}
+
+
+class AdminRepositoryResponse(BaseModel):
+    """A repository as the admin manages it: identity plus its LLM-config state.
+
+    ``configured`` is the same predicate the query endpoint gates on (provider +
+    model + key all set), so the admin list can flag repos that can't yet answer.
+    The key itself is never included, masked or otherwise — that lives behind the
+    per-repo ``GET …/llm-config`` route.
+    """
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    configured: bool
+
+
+def _admin_response(repo: Repository) -> AdminRepositoryResponse:
+    return AdminRepositoryResponse(
+        id=repo.id,
+        name=repo.name,
+        description=repo.description,
+        configured=repo.llm_configured,
+    )
 
 
 class LLMConfigResponse(BaseModel):
@@ -77,6 +109,32 @@ async def list_repositories(
     sees repositories they haven't been granted."""
     repos = await grant_service.list_accessible_repositories(session, user.id)
     return [RepositoryResponse.model_validate(r) for r in repos]
+
+
+@router.post("/repositories", status_code=status.HTTP_201_CREATED)
+async def create_repository(
+    payload: RepositoryCreateRequest,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AdminRepositoryResponse:
+    """Create a repository (admin-only, card #37 / design spec §3). It starts
+    unconfigured — an admin must set its LLM provider/model/key before it can answer."""
+    repo = Repository(name=payload.name, description=payload.description)
+    session.add(repo)
+    await session.commit()
+    await session.refresh(repo)
+    return _admin_response(repo)
+
+
+@router.get("/admin/repositories")
+async def list_all_repositories(
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[AdminRepositoryResponse]:
+    """List *every* repository with its config state (admin-only, card #37). Distinct
+    from ``GET /repositories``, which is scoped to the caller's granted repos."""
+    result = await session.execute(select(Repository).order_by(Repository.created_at))
+    return [_admin_response(r) for r in result.scalars().all()]
 
 
 @router.put("/repositories/{repository_id}/llm-config")
