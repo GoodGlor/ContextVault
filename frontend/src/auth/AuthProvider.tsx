@@ -2,17 +2,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { configureApi } from "../api/client";
 import * as authApi from "../api/auth";
+import * as invitationsApi from "../api/invitations";
 import { decodeToken } from "./jwt";
 import { AuthContext, type Session } from "./AuthContext";
 
 const STORAGE_KEY = "contextvault.session";
+
+/** A token is stale once its `exp` (seconds) is in the past. */
+function isExpired(token: string): boolean {
+  const exp = decodeToken(token)?.exp;
+  return exp !== undefined && exp * 1000 <= Date.now();
+}
 
 function loadSession(): Session | null {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw === null) return null;
   try {
     const parsed = JSON.parse(raw) as Session;
+    // Drop malformed or already-expired tokens so we never mount an authenticated
+    // shell on a dead session (there is no refresh endpoint — expiry means re-login).
     if (typeof parsed.token !== "string" || decodeToken(parsed.token) === null) return null;
+    if (isExpired(parsed.token)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -59,6 +72,17 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     [persist],
   );
 
+  const acceptInvite = useCallback(
+    async (token: string, password: string) => {
+      // The accept endpoint creates the account but returns no token; sign in with
+      // the just-chosen password so the user lands authenticated in one step.
+      const user = await invitationsApi.acceptInvitation(token, password);
+      const res = await authApi.login(user.username, password);
+      persist(sessionFromToken(res.access_token, user.username, res.must_change_password));
+    },
+    [persist],
+  );
+
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string) => {
       const res = await authApi.changePassword(currentPassword, newPassword);
@@ -69,8 +93,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   );
 
   const value = useMemo(
-    () => ({ session, login, changePassword, logout }),
-    [session, login, changePassword, logout],
+    () => ({ session, login, acceptInvite, changePassword, logout }),
+    [session, login, acceptInvite, changePassword, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

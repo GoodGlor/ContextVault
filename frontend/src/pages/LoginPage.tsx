@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 
@@ -71,6 +71,9 @@ export function LoginPage(): ReactNode {
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <p className="form-hint">
+        Have an invite? <Link to="/accept-invite">Activate your account</Link>
+      </p>
     </div>
   );
 }

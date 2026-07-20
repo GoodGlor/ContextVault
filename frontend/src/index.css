@@ -127,3 +127,8 @@ input {
   margin: 0;
   font-size: 0.9rem;
 }
+
+.form-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
