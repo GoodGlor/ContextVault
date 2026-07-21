@@ -77,6 +77,13 @@ enforce the bounce too; 403 when the role is insufficient). Tune
 `ACCESS_TOKEN_EXPIRE_MINUTES` and set a strong `SECRET_KEY` (≥ 32 bytes) in
 production.
 
+### Listing users
+
+- `GET /users` (**admin-only**) lists every account — `id`, `username`, `role`,
+  `must_change_password`, `created_at` — oldest first. It never includes the
+  password hash. This is the enumeration the admin user-management UI drives
+  (reset / delete, and picking grant recipients).
+
 ### Password recovery & forced change
 
 Account recovery is admin-issued (design spec §2):
@@ -691,7 +698,7 @@ The click-through highlights the cited **source reference** (title, author, char
 it cannot yet render the raw passage text, because the backend exposes no user-facing
 source-content endpoint — that is a future backend card.
 
-**Admin surface** (cards #37–#38, admin-only pages, linked from the header nav for admins):
+**Admin surface** (cards #37–#39, admin-only pages, linked from the header nav for admins):
 
 - **Repositories** (`/admin/repositories`) — lists **all** repositories
   (`GET /admin/repositories`) with a Configured / Not configured badge; a form creates
@@ -705,7 +712,16 @@ source-content endpoint — that is a future backend card.
   while anything is still ingesting, stopping once every source is terminal. A failed
   source shows its ingestion error; each can be **deleted** (`DELETE /sources/{id}`).
 
-Both routes are guarded by `RequireAuth requireAdmin`, so non-admins are bounced home.
+- **Users & access** (`/admin/users`) — three panels over the account and grant
+  APIs. *Invite* issues an onboarding invite (`POST /invitations`) and reveals the
+  one-time token to hand over. *Accounts* lists every user (`GET /users`) with a
+  "Password change owed" badge, a **reset-password** action (`POST …/reset-password`,
+  showing the temp password once) and a **confirmation-gated delete** (type the
+  username, then `DELETE /users/{id}`). *Repository access* picks a repo and manages
+  its grants (`GET`/`POST /repositories/{id}/grants`, `DELETE …/grants/{user_id}`) with
+  an optional expiry.
+
+All admin routes are guarded by `RequireAuth requireAdmin`, so non-admins are bounced home.
 
 **Frontend Definition of Done** (run from `frontend/`):
 
