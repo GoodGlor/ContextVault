@@ -449,6 +449,13 @@ require an admin bearer token; non-admins get `403`.
 | `GET /sources/{id}` | Fetch one source, including `status` and `ingest_error`. |
 | `DELETE /sources/{id}` | Delete a source; its chunks cascade away. |
 
+One endpoint here is **not** admin-only — it is the user-facing counterpart that lets a
+reader open a cited passage (card #90):
+
+| Method & path | Purpose |
+|---|---|
+| `GET /repositories/{id}/sources/{source_id}` | **Any authenticated user.** Return a source's `title`, `kind`, and `content` (its passage text). Gated by an **active grant** on the repository (`403` without — the same rule retrieval enforces); `404` if the source is not in that repository. |
+
 Upload returns immediately with `status: "pending"` — ingestion runs in the
 background, so poll `GET /sources/{id}` to watch it move to `done` (or `failed`, with
 `ingest_error` set). The embedding provider is injected via a dependency
@@ -658,12 +665,11 @@ session on any `401`, bouncing the user back to `/login`.
   clickable chips (`parseAnswer` splits them from text) that highlight and scroll to the
   matching entry in the **Sources** panel. Each source shows its title, a **Verified**
   badge + author for Admin Notes, and the citation's character span.
+- **View passage** — each source has a "View passage" button that loads its raw text on
+  demand from the user-scoped content endpoint (`GET /repositories/{id}/sources/{source_id}`,
+  card #90) and shows it inline. Access is gated by the caller's active grant (403 otherwise).
 - **Not in this vault** — when the response's `not_in_vault` is set, the turn shows an
   explicit callout rather than dressing up the refusal as an answer.
-
-The click-through highlights the cited **source reference** (title, author, char span);
-it cannot yet render the raw passage text, because the backend exposes no user-facing
-source-content endpoint — that is a future backend card.
 
 **Admin surface** (cards #37–#40, admin-only pages, linked from the header nav for admins):
 

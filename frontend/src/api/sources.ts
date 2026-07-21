@@ -34,6 +34,21 @@ export function getSource(sourceId: string): Promise<Source> {
   return api.get<Source>(`/sources/${sourceId}`);
 }
 
+// Mirrors SourceContentResponse in src/contextvault/api/sources.py.
+export interface SourceContent {
+  id: string;
+  repository_id: string;
+  title: string;
+  kind: SourceKind;
+  content: string | null;
+}
+
+/** Read a cited source's passage text — any authenticated user with an active
+ *  grant on the repository (403 otherwise). */
+export function getSourceContent(repositoryId: string, sourceId: string): Promise<SourceContent> {
+  return api.get<SourceContent>(`/repositories/${repositoryId}/sources/${sourceId}`);
+}
+
 /** Upload a document to a repository; ingestion runs in the background. */
 export function uploadSource(repositoryId: string, file: File): Promise<Source> {
   const form = new FormData();

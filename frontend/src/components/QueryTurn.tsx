@@ -11,9 +11,11 @@ import { SourceList } from "./SourceList";
 export function QueryTurn({
   question,
   result,
+  repositoryId,
 }: {
   question: string;
   result: QueryResult;
+  repositoryId: string;
 }): ReactNode {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const refs = useRef(new Map<string, HTMLLIElement>());
@@ -43,6 +45,7 @@ export function QueryTurn({
         citations={result.citations}
         highlightedId={highlightedId}
         registerRef={registerRef}
+        repositoryId={repositoryId}
       />
     </div>
   );
