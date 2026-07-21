@@ -9,6 +9,7 @@ interface Turn {
   id: string;
   question: string;
   result: QueryResult;
+  repositoryId: string;
 }
 
 /** The core user experience: pick a granted repo, ask, get a cited answer. */
@@ -48,7 +49,10 @@ export function QueryPage(): ReactNode {
     try {
       const result = await queryRepository(selected, q);
       turnSeq.current += 1;
-      setTurns((prev) => [...prev, { id: String(turnSeq.current), question: q, result }]);
+      setTurns((prev) => [
+        ...prev,
+        { id: String(turnSeq.current), question: q, result, repositoryId: selected },
+      ]);
       setQuestion("");
     } catch (err) {
       setAskError(err instanceof ApiError ? err.detail : "Something went wrong. Try again.");
@@ -90,7 +94,12 @@ export function QueryPage(): ReactNode {
 
       <div className="conversation">
         {turns.map((turn) => (
-          <QueryTurn key={turn.id} question={turn.question} result={turn.result} />
+          <QueryTurn
+            key={turn.id}
+            question={turn.question}
+            result={turn.result}
+            repositoryId={turn.repositoryId}
+          />
         ))}
       </div>
 
