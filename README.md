@@ -1,8 +1,76 @@
 # ContextVault
 
-An admin-curated, NotebookLM-style RAG assistant with per-user access control and
-per-repository model choice. See the design spec in
+> An admin-curated, NotebookLM-style RAG assistant with per-user access control and
+> per-repository model choice.
+
+ContextVault lets an admin build trusted knowledge repositories ("vaults") by
+ingesting documents and writing Admin Notes, then lets users ask natural-language
+questions and get **grounded, cited** answers — scoped strictly to the repositories
+each user has been granted. When an answer isn't in a vault, the system says so
+honestly and logs the gap for the admin to close. Each repository chooses its own
+LLM, so different corpora can answer with different models.
+
+See the full design spec in
 [`docs/superpowers/specs/2026-07-07-contextvault-design.md`](docs/superpowers/specs/2026-07-07-contextvault-design.md).
+
+## Features
+
+- **Grounded, cited answers** — every response is generated from retrieved passages
+  and carries numbered `[n]` citations back to the exact source spans.
+- **Honest "not in this vault"** — when retrieval finds nothing relevant, the system
+  refuses to fabricate and records the question as a knowledge gap.
+- **Per-user access control** — users ↔ repositories is a many-to-many grant table,
+  optionally time-boxed, and **hard-filtered at the SQL level** on every retrieval.
+- **Per-repository model choice** — each vault stores its own provider / model / API
+  key (encrypted at rest); there is no shared default.
+- **Multi-provider generation** — Anthropic, OpenAI, Google (Gemini), and OpenRouter.
+- **Curation flywheel** — a ranked knowledge-gap dashboard feeds Admin Notes (first-class,
+  verified sources), and usage analytics show what's working.
+- **Admin web UI + REST API** — a React SPA over a documented FastAPI backend, with
+  admin surfaces for repositories, sources, users/grants, and insights.
+- **Local, multilingual embeddings** — sentence-transformers (bge-m3), so no documents
+  or queries leave for a third-party embedding service.
+
+## Tech stack
+
+- **Backend:** FastAPI · SQLAlchemy (async) + Alembic · Postgres + pgvector · Argon2 +
+  JWT · sentence-transformers.
+- **Frontend:** React + TypeScript + Vite (single-page app).
+- **Tooling:** uv · ruff · mypy · pytest · Vitest + Testing Library · GitHub Actions CI.
+
+## Table of contents
+
+**Getting started**
+[Prerequisites](#prerequisites) ·
+[Setup](#setup) ·
+[Run](#run) ·
+[Database migrations](#database-migrations)
+
+**Accounts & access**
+[Authentication](#authentication) ·
+[First-admin bootstrap](#first-admin-bootstrap) ·
+[Invitations](#invitations-onboarding) ·
+[Access grants](#access-grants-admin)
+
+**Knowledge pipeline**
+[Provider API-key encryption](#provider-api-key-encryption) ·
+[Embeddings](#embeddings) ·
+[Document parsing](#document-parsing) ·
+[Chunking](#chunking) ·
+[Ingestion pipeline](#ingestion-pipeline)
+
+**Retrieval & generation**
+[Retrieval](#retrieval-access-filtered-vector-search) ·
+[Generation](#generation-llm-provider-interface) ·
+[Source API](#source-api-admin) ·
+[Repository management](#repository-management-admin) ·
+[Repository LLM configuration](#repository-llm-configuration-admin) ·
+[Query API](#query-api-the-full-rag-loop)
+
+**Interface & development**
+[Frontend](#frontend-react-spa) ·
+[Quality checks](#quality-checks-definition-of-done) ·
+[Project layout](#project-layout)
 
 ## Prerequisites
 
@@ -744,13 +812,18 @@ CI runs these as a separate `frontend` job (see `.github/workflows/ci.yml`).
 
 ## Quality checks (Definition of Done)
 
-These are the commands every task's Definition of Done refers to:
+Every change must keep **both** gates green — the backend suite and (for UI work) the
+frontend suite. CI runs them as two jobs in `.github/workflows/ci.yml`.
 
 ```bash
+# Backend
 uv run ruff check src tests           # lint
 uv run ruff format --check src tests  # formatting
 uv run mypy                           # strict type check
-uv run pytest                         # tests
+uv run pytest                         # tests (Postgres up + migrated for DB-backed tests)
+
+# Frontend (from frontend/)
+npm run lint && npm run format:check && npm run typecheck && npm test && npm run build
 ```
 
 Tests are isolated from your local `.env`: settings come only from real environment
@@ -770,18 +843,21 @@ src/contextvault/
   core/crypto.py     # Fernet encrypt/decrypt + mask for provider keys at rest
   core/tokens.py     # JWT create/decode
   db/                # Base metadata + async engine/session
-  api/               # routers (health, auth, sources, query) + deps (auth, embedder, llm)
-  models/            # ORM models (users, repositories, sources, chunks, grants)
+  api/               # routers (auth, invitations, users, repositories, grants, sources,
+                     #   query, knowledge_gaps, analytics, health) + deps (auth, embedder, llm)
+  models/            # ORM models (users, repositories, sources, chunks, grants, query_log)
   retrieval/         # access-filtered vector search + question→chunks service
   llm/               # LLMProvider interface + Answer/Citation schema + Gemini/OpenAI/OpenRouter/Anthropic providers + factory
-  services/          # users, first-admin bootstrap
+  services/          # users, bootstrap, grants, invitations, ingestion, knowledge_gaps, analytics
 migrations/          # Alembic (env.py + versions/)
 alembic.ini
+dev.sh               # one-command local stack (db + migrations + admin + backend + frontend)
 tests/               # pytest suite
 frontend/            # React + Vite + TS single-page app (SPA)
   src/api/           # typed fetch client (JWT, ApiError) + endpoint modules
   src/auth/          # AuthProvider, useAuth, RequireAuth, JWT decode
-  src/pages/         # routed screens (login, accept-invite, change-password, query)
+  src/pages/         # routed screens: user (login, accept-invite, change-password, query)
+                     #   + admin (repositories, sources, users, insights)
   src/query/         # answer parsing ([n] citation markers)
   src/components/    # shared UI (Layout, AnswerText, SourceList, QueryTurn)
 docker-compose.yml   # local Postgres + pgvector
