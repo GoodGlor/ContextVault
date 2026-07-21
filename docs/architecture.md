@@ -479,6 +479,8 @@ admin-only (`403` for non-admins):
 |---|---|
 | `POST /repositories` | Create a repository. Body `{"name": "...", "description": "..."?}`; returns the repo with a `configured` flag (always `false` at creation). |
 | `GET /admin/repositories` | List **every** repository with its `configured` state — distinct from `GET /repositories`, which is scoped to the caller's granted repos. |
+| `PATCH /repositories/{id}` | Update `name` and/or `description`. Only the fields present are applied; an explicit `description: null` clears it, an omitted field is left unchanged; a blank `name` is `422`. |
+| `DELETE /repositories/{id}` | Delete a repository, **confirmation-gated** by echoing its name (`{"confirm_name": "…"}`, else `400`). Its sources, chunks, and grants cascade away with it (`ON DELETE CASCADE`). `204` on success. |
 
 A freshly created repository is unconfigured and cannot answer until an admin sets
 its LLM (below). `GET /admin/repositories` never includes key material — the key
@@ -670,7 +672,9 @@ source-content endpoint — that is a future backend card.
   a new one (`POST /repositories`). Each repo expands to an **LLM config** editor that
   reads the current config (`GET …/llm-config`, key shown only masked) and sets a new
   `provider` / `model` / `api_key` (`PUT …/llm-config`). The key field is write-only —
-  it is never pre-filled, and the saved key comes back masked.
+  it is never pre-filled, and the saved key comes back masked. Each repo can also be
+  **renamed** (`PATCH /repositories/{id}`) or **deleted** (`DELETE /repositories/{id}`,
+  confirmation-gated by echoing its name).
 - **Sources** (`/admin/sources`) — pick a repository, then **upload** a document
   (`POST …/sources`, multipart) and watch it ingest: the list (`GET …/sources`) shows
   each source's status (`pending` → `processing` → `done` / `failed`) and **auto-polls**

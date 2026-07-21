@@ -55,6 +55,21 @@ export function createRepository(input: {
   return api.post<AdminRepository>("/repositories", input);
 }
 
+/** Update a repository's name and/or description (admin-only). Omitted fields are
+ *  left unchanged; `description: null` clears it. */
+export function updateRepository(
+  id: string,
+  input: { name?: string; description?: string | null },
+): Promise<AdminRepository> {
+  return api.patch<AdminRepository>(`/repositories/${id}`, input);
+}
+
+/** Delete a repository (admin-only); the caller must echo its name. Its sources,
+ *  chunks, and grants cascade away with it. */
+export function deleteRepository(id: string, confirmName: string): Promise<void> {
+  return api.del<void>(`/repositories/${id}`, { confirm_name: confirmName });
+}
+
 /** Read a repository's LLM config (key masked; nulls if unconfigured). */
 export function getLlmConfig(repositoryId: string): Promise<LLMConfig> {
   return api.get<LLMConfig>(`/repositories/${repositoryId}/llm-config`);
