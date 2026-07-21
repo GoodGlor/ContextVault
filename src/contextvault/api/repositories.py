@@ -37,6 +37,20 @@ class RepositoryCreateRequest(BaseModel):
     description: str | None = None
 
 
+class RepositoryUpdateRequest(BaseModel):
+    """Partial update for a repository (card #89). Omitted fields are left
+    unchanged; an explicit ``description: null`` clears the description."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+
+
+class RepositoryDeleteRequest(BaseModel):
+    """Confirmation payload: the client must echo the repo's name to delete it."""
+
+    confirm_name: str
+
+
 class RepositoryResponse(BaseModel):
     """A repository as seen by a user choosing where to ask (their repo picker)."""
 
@@ -135,6 +149,48 @@ async def list_all_repositories(
     from ``GET /repositories``, which is scoped to the caller's granted repos."""
     result = await session.execute(select(Repository).order_by(Repository.created_at))
     return [_admin_response(r) for r in result.scalars().all()]
+
+
+@router.patch("/repositories/{repository_id}")
+async def update_repository(
+    repository_id: uuid.UUID,
+    payload: RepositoryUpdateRequest,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AdminRepositoryResponse:
+    """Update a repository's name and/or description (admin-only, card #89).
+
+    Only the fields present in the request are applied; an explicit ``description:
+    null`` clears it, while omitting a field leaves it unchanged."""
+    repo = await _get_repo(session, repository_id)
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("name") is not None:
+        repo.name = data["name"]
+    if "description" in data:
+        repo.description = data["description"]
+    await session.commit()
+    await session.refresh(repo)
+    return _admin_response(repo)
+
+
+@router.delete("/repositories/{repository_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_repository(
+    repository_id: uuid.UUID,
+    payload: RepositoryDeleteRequest,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Delete a repository, confirmation-gated by echoing its name (admin-only, card
+    #89). Its sources, chunks, and grants cascade away with it (FK ``ON DELETE
+    CASCADE``)."""
+    repo = await _get_repo(session, repository_id)
+    if payload.confirm_name != repo.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name confirmation does not match",
+        )
+    await session.delete(repo)
+    await session.commit()
 
 
 @router.put("/repositories/{repository_id}/llm-config")
