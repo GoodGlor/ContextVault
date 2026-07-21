@@ -18,6 +18,12 @@ async def get_user_by_id(session: AsyncSession, user_id: uuid.UUID) -> User | No
     return await session.get(User, user_id)
 
 
+async def list_users(session: AsyncSession) -> list[User]:
+    """Return all users, oldest first (admin management listing, card #39)."""
+    result = await session.execute(sa.select(User).order_by(User.created_at))
+    return list(result.scalars().all())
+
+
 async def create_user(
     session: AsyncSession,
     *,
