@@ -3,9 +3,11 @@ import type { FormEvent, ReactNode } from "react";
 import { ApiError } from "../api/client";
 import {
   createRepository,
+  deleteRepository,
   getLlmConfig,
   listAllRepositories,
   setLlmConfig,
+  updateRepository,
   LLM_PROVIDERS,
   type AdminRepository,
   type LLMConfig,
@@ -25,8 +27,6 @@ export function AdminRepositoriesPage(): ReactNode {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,9 +62,10 @@ export function AdminRepositoriesPage(): ReactNode {
     }
   };
 
-  /** Reflect a saved config back into the list's `configured` badge. */
-  const markConfigured = (id: string) =>
-    setRepos((prev) => prev?.map((r) => (r.id === id ? { ...r, configured: true } : r)) ?? prev);
+  /** Replace a repo in the list (after rename / config change). */
+  const upsert = (updated: AdminRepository) =>
+    setRepos((prev) => prev?.map((r) => (r.id === updated.id ? updated : r)) ?? prev);
+  const remove = (id: string) => setRepos((prev) => prev?.filter((r) => r.id !== id) ?? prev);
 
   if (reposError !== null) {
     return <p className="error">{reposError}</p>;
@@ -98,30 +99,137 @@ export function AdminRepositoriesPage(): ReactNode {
       ) : (
         <ul className="repo-list">
           {repos.map((repo) => (
-            <li key={repo.id} className="repo-item">
-              <div className="repo-head">
-                <span className="repo-name">{repo.name}</span>
-                {repo.description !== null && (
-                  <span className="repo-description">{repo.description}</span>
-                )}
-                <span className={repo.configured ? "badge configured" : "badge unconfigured"}>
-                  {repo.configured ? "Configured" : "Not configured"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setExpandedId((id) => (id === repo.id ? null : repo.id))}
-                >
-                  Configure
-                </button>
-              </div>
-              {expandedId === repo.id && (
-                <RepoConfigPanel repository={repo} onConfigured={() => markConfigured(repo.id)} />
-              )}
-            </li>
+            <RepoItem
+              key={repo.id}
+              repo={repo}
+              onChanged={upsert}
+              onDeleted={() => remove(repo.id)}
+            />
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/** One repository row: configure its LLM, rename it, or delete it. */
+function RepoItem({
+  repo,
+  onChanged,
+  onDeleted,
+}: {
+  repo: AdminRepository;
+  onChanged: (updated: AdminRepository) => void;
+  onDeleted: () => void;
+}): ReactNode {
+  const [configuring, setConfiguring] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(repo.name);
+  const [description, setDescription] = useState(repo.description ?? "");
+  const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onRename = async (e: FormEvent) => {
+    e.preventDefault();
+    if (name.trim() === "") return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateRepository(repo.id, {
+        name: name.trim(),
+        description: description.trim() === "" ? null : description.trim(),
+      });
+      onChanged(updated);
+      setRenaming(false);
+    } catch (err) {
+      setError(errorMessage(err, "Could not update the repository."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onDelete = async () => {
+    if (confirmName !== repo.name) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteRepository(repo.id, confirmName);
+      onDeleted();
+    } catch (err) {
+      setError(errorMessage(err, "Could not delete the repository."));
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <li className="repo-item">
+      <div className="repo-head">
+        <span className="repo-name">{repo.name}</span>
+        {repo.description !== null && <span className="repo-description">{repo.description}</span>}
+        <span className={repo.configured ? "badge configured" : "badge unconfigured"}>
+          {repo.configured ? "Configured" : "Not configured"}
+        </span>
+        <button type="button" onClick={() => setConfiguring((v) => !v)}>
+          Configure
+        </button>
+        <button type="button" onClick={() => setRenaming((v) => !v)}>
+          Rename
+        </button>
+        {!confirmingDelete ? (
+          <button type="button" onClick={() => setConfirmingDelete(true)}>
+            Delete
+          </button>
+        ) : (
+          <span className="confirm-delete">
+            <label htmlFor={`repo-confirm-${repo.id}`}>Confirm name</label>
+            <input
+              id={`repo-confirm-${repo.id}`}
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={deleting || confirmName !== repo.name}
+            >
+              Confirm delete
+            </button>
+          </span>
+        )}
+      </div>
+
+      {renaming && (
+        <form className="repo-rename" onSubmit={onRename}>
+          <label htmlFor={`repo-name-${repo.id}`}>Name</label>
+          <input
+            id={`repo-name-${repo.id}`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <label htmlFor={`repo-desc-${repo.id}`}>Description</label>
+          <input
+            id={`repo-desc-${repo.id}`}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <button type="submit" disabled={saving || name.trim() === ""}>
+            Save
+          </button>
+        </form>
+      )}
+
+      {error !== null && <p className="error">{error}</p>}
+
+      {configuring && (
+        <RepoConfigPanel
+          repository={repo}
+          onConfigured={() => onChanged({ ...repo, configured: true })}
+        />
+      )}
+    </li>
   );
 }
 
