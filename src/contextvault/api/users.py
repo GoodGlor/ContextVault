@@ -10,6 +10,7 @@ erasing them.
 """
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
@@ -21,6 +22,28 @@ from contextvault.models import Role, User
 from contextvault.services import users as user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class UserResponse(BaseModel):
+    """A user account as the admin management UI sees it (never the password hash)."""
+
+    id: uuid.UUID
+    username: str
+    role: Role
+    must_change_password: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("")
+async def list_users(
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[UserResponse]:
+    """List all user accounts, oldest first (admin-only, card #39)."""
+    users = await user_service.list_users(session)
+    return [UserResponse.model_validate(u) for u in users]
 
 
 class ResetPasswordResponse(BaseModel):

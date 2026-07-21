@@ -22,6 +22,7 @@ export function Layout(): ReactNode {
           <nav className="app-nav">
             <Link to="/admin/repositories">Repositories</Link>
             <Link to="/admin/sources">Sources</Link>
+            <Link to="/admin/users">Users</Link>
           </nav>
         )}
         {session && (
