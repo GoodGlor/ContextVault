@@ -70,7 +70,9 @@ See the full design spec in
 **Interface & development**
 [Frontend](#frontend-react-spa) ·
 [Quality checks](#quality-checks-definition-of-done) ·
-[Project layout](#project-layout)
+[Project layout](#project-layout) ·
+[Contributing](#contributing) ·
+[License](#license)
 
 ## Prerequisites
 
@@ -862,3 +864,29 @@ frontend/            # React + Vite + TS single-page app (SPA)
   src/components/    # shared UI (Layout, AnswerText, SourceList, QueryTurn)
 docker-compose.yml   # local Postgres + pgvector
 ```
+
+## Contributing
+
+Work is tracked as cards on the **ContextVault** GitHub Projects board (each card is
+a 1:1 GitHub issue). The workflow for a change:
+
+1. **Branch from fresh `main`:** `git fetch && git checkout main && git pull --ff-only`,
+   then `git checkout -b feat/<slug>`.
+2. **Test-first (TDD):** write a failing test that expresses the behavior, make it
+   pass with the minimal change, then refactor.
+3. **Keep both gates green** — the backend and frontend commands under
+   [Quality checks](#quality-checks-definition-of-done). Bring Postgres up
+   (`docker compose up -d` + `uv run alembic upgrade head`) for the DB-backed tests.
+4. **Update the docs in the same change** — the README / `docs/` must match the code
+   (this is a hard rule; project *status*, though, lives on the board, not here).
+5. **Open a PR against `main`** with a clear description; reference the card with
+   `Refs #<n>`. Merge is a **squash-merge** once CI is green.
+
+Conventional commit prefixes (`feat:` / `fix:` / `docs:` / `chore:`) are used throughout.
+
+## License
+
+No license has been declared for this project yet, so it is under **exclusive
+copyright** by default — see GitHub's [licensing guidance](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository).
+To make the terms of use explicit, add a `LICENSE` file (e.g. MIT, Apache-2.0) and
+update this section.
