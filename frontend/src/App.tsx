@@ -9,6 +9,7 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
 import { AdminSourcesPage } from "./pages/AdminSourcesPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { AdminInsightsPage } from "./pages/AdminInsightsPage";
 
 /** Top-level route table. Public auth screens sit outside the protected shell. */
 export function App(): ReactNode {
@@ -53,6 +54,14 @@ export function App(): ReactNode {
           element={
             <RequireAuth requireAdmin>
               <AdminUsersPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/insights"
+          element={
+            <RequireAuth requireAdmin>
+              <AdminInsightsPage />
             </RequireAuth>
           }
         />

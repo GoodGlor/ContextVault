@@ -698,7 +698,7 @@ The click-through highlights the cited **source reference** (title, author, char
 it cannot yet render the raw passage text, because the backend exposes no user-facing
 source-content endpoint — that is a future backend card.
 
-**Admin surface** (cards #37–#39, admin-only pages, linked from the header nav for admins):
+**Admin surface** (cards #37–#40, admin-only pages, linked from the header nav for admins):
 
 - **Repositories** (`/admin/repositories`) — lists **all** repositories
   (`GET /admin/repositories`) with a Configured / Not configured badge; a form creates
@@ -720,6 +720,13 @@ source-content endpoint — that is a future backend card.
   username, then `DELETE /users/{id}`). *Repository access* picks a repo and manages
   its grants (`GET`/`POST /repositories/{id}/grants`, `DELETE …/grants/{user_id}`) with
   an optional expiry.
+
+- **Insights** (`/admin/insights`) — the curation cockpit. A **knowledge-gap
+  dashboard** (`GET …/knowledge-gaps`) ranks the questions a repo couldn't answer;
+  "Answer this gap" opens an inline **Admin Note** editor prefilled with the question
+  (`POST …/admin-notes`), which closes the gap once ingested. An **analytics** panel
+  (`GET /analytics`) shows totals + gap rate, per-repository volume, top questions,
+  most-active users, and a by-day series.
 
 All admin routes are guarded by `RequireAuth requireAdmin`, so non-admins are bounced home.
 
