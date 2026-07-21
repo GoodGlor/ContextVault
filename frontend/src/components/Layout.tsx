@@ -23,6 +23,7 @@ export function Layout(): ReactNode {
             <Link to="/admin/repositories">Repositories</Link>
             <Link to="/admin/sources">Sources</Link>
             <Link to="/admin/users">Users</Link>
+            <Link to="/admin/insights">Insights</Link>
           </nav>
         )}
         {session && (
