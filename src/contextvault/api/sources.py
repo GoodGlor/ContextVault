@@ -14,10 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.api.deps import get_embedder, get_ingestion_session_factory, require_admin
+from contextvault.api.deps import (
+    get_current_user,
+    get_embedder,
+    get_ingestion_session_factory,
+    require_admin,
+)
 from contextvault.db.session import get_session
 from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.models import Repository, Source, SourceKind, SourceStatus, User
+from contextvault.services import grants as grant_service
 from contextvault.services.ingestion import SessionFactory, run_ingestion
 
 router = APIRouter(tags=["sources"])
@@ -136,6 +142,38 @@ async def create_admin_note(
         session_factory=session_factory,
     )
     return SourceResponse.model_validate(source)
+
+
+class SourceContentResponse(BaseModel):
+    """A source's passage text, for a granted user reading a citation (card #90)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    repository_id: uuid.UUID
+    title: str
+    kind: SourceKind
+    content: str | None
+
+
+@router.get("/repositories/{repository_id}/sources/{source_id}")
+async def read_source_content(
+    repository_id: uuid.UUID,
+    source_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> SourceContentResponse:
+    """Read a cited source's passage text (card #90). Any authenticated user, gated by
+    an **active grant** on the repository (`403` without — the same rule retrieval
+    enforces). `404` if the source is not in this repository."""
+    if not await grant_service.has_active_grant(session, user.id, repository_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="No access to this repository"
+        )
+    source = await session.get(Source, source_id)
+    if source is None or source.repository_id != repository_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    return SourceContentResponse.model_validate(source)
 
 
 @router.get("/repositories/{repository_id}/sources")

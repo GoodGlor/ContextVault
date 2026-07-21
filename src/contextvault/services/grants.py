@@ -73,6 +73,23 @@ async def list_grants_for_repository(
     return result.scalars().all()
 
 
+async def has_active_grant(
+    session: AsyncSession, user_id: uuid.UUID, repository_id: uuid.UUID
+) -> bool:
+    """True when the user holds a non-expired grant on the repository — the single
+    active-grant predicate the query endpoint and source-content endpoint both gate on."""
+    stmt = (
+        sa.select(Grant.id)
+        .where(
+            Grant.user_id == user_id,
+            Grant.repository_id == repository_id,
+            sa.or_(Grant.expires_at.is_(None), Grant.expires_at > sa.func.now()),
+        )
+        .limit(1)
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
 async def list_accessible_repositories(
     session: AsyncSession, user_id: uuid.UUID
 ) -> Sequence[Repository]:

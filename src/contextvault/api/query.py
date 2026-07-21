@@ -18,15 +18,16 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import RepoLLMBuilder, get_current_user, get_embedder, get_llm_builder
 from contextvault.db.session import get_session
 from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.llm import Citation
-from contextvault.models import Grant, Repository, Source, SourceKind, User
+from contextvault.models import Repository, Source, SourceKind, User
 from contextvault.retrieval import retrieve
+from contextvault.services import grants as grant_service
 from contextvault.services.query_log import log_query
 
 router = APIRouter(tags=["query"])
@@ -75,22 +76,6 @@ class QueryResponse(BaseModel):
     not_in_vault: bool
     citations: list[CitationResponse]
     sources: list[SourceReferenceResponse]
-
-
-async def _has_active_grant(
-    session: AsyncSession, user_id: uuid.UUID, repository_id: uuid.UUID
-) -> bool:
-    """True when the user holds a grant on the repository that has not expired."""
-    stmt = (
-        select(Grant.id)
-        .where(
-            Grant.user_id == user_id,
-            Grant.repository_id == repository_id,
-            or_(Grant.expires_at.is_(None), Grant.expires_at > func.now()),
-        )
-        .limit(1)
-    )
-    return (await session.execute(stmt)).first() is not None
 
 
 async def _cited_sources(
@@ -159,7 +144,7 @@ async def query_repository(
     repo = await session.get(Repository, repository_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
-    if not await _has_active_grant(session, user.id, repository_id):
+    if not await grant_service.has_active_grant(session, user.id, repository_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="No access to this repository"
         )
