@@ -2,7 +2,7 @@ import { api } from "./client";
 
 // Mirrors the source schemas in src/contextvault/api/sources.py.
 
-export type SourceKind = "document" | "admin_note";
+export type SourceKind = "document" | "admin_note" | "image" | "web";
 
 // Mirrors SourceStatus in src/contextvault/models/enums.py — the ingestion
 // pipeline state (parse→chunk→embed→store).
@@ -19,6 +19,7 @@ export interface Source {
   kind: SourceKind;
   title: string;
   original_filename: string | null;
+  source_url: string | null;
   status: SourceStatus;
   ingest_error: string | null;
   created_at: string;
@@ -59,4 +60,9 @@ export function uploadSource(repositoryId: string, file: File): Promise<Source> 
 /** Delete a source; its chunks cascade away with it (admin-only). */
 export function deleteSource(sourceId: string): Promise<void> {
   return api.del<void>(`/sources/${sourceId}`);
+}
+
+/** Add a single web page as a source; ingestion runs in the background. */
+export function addWebSource(repositoryId: string, url: string): Promise<Source> {
+  return api.post<Source>(`/repositories/${repositoryId}/web-sources`, { url });
 }

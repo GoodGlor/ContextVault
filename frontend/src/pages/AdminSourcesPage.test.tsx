@@ -23,6 +23,7 @@ function source(overrides: Partial<Source> = {}): Source {
     kind: "document",
     title: "policy.pdf",
     original_filename: "policy.pdf",
+    source_url: null,
     status: "done",
     ingest_error: null,
     created_at: "2026-07-20T10:00:00Z",
@@ -43,12 +44,18 @@ describe("AdminSourcesPage", () => {
     repos?: AdminRepository[];
     sources?: Source[] | ((call: number) => Source[]);
     uploaded?: Source;
+    webAdded?: Source;
   }) {
     const repos = opts.repos ?? REPOS;
     let listCall = 0;
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       if (url.endsWith("/admin/repositories")) return Promise.resolve(json(repos));
+      if (/\/repositories\/[^/]+\/web-sources$/.test(url) && method === "POST") {
+        return Promise.resolve(
+          json(opts.webAdded ?? source({ kind: "web", status: "pending" }), 201),
+        );
+      }
       if (/\/repositories\/[^/]+\/sources$/.test(url)) {
         if (method === "POST") {
           return Promise.resolve(json(opts.uploaded ?? source({ status: "pending" }), 201));
@@ -139,5 +146,42 @@ describe("AdminSourcesPage", () => {
     render(<AdminSourcesPage />);
     expect(await screen.findByText("failed")).toBeInTheDocument();
     expect(screen.getByText(/boom/)).toBeInTheDocument();
+  });
+
+  it("renders the OCR helper note", async () => {
+    mock({ sources: [] });
+    render(<AdminSourcesPage />);
+    expect(
+      await screen.findByText(/only text visible in the image is captured/i),
+    ).toBeInTheDocument();
+  });
+
+  it("submits a web link and appends the created source", async () => {
+    mock({
+      sources: [],
+      webAdded: source({
+        id: "w-1",
+        kind: "web",
+        title: "https://x.test",
+        original_filename: null,
+        source_url: "https://x.test",
+        status: "pending",
+      }),
+    });
+    render(<AdminSourcesPage />);
+    await screen.findByRole("button", { name: "Add link" });
+
+    await userEvent.type(screen.getByLabelText("Web link"), "https://x.test");
+    await userEvent.click(screen.getByRole("button", { name: "Add link" }));
+
+    const posted = fetchMock.mock.calls.find(
+      (c) => (c[1]?.method ?? "GET") === "POST" && String(c[0]).endsWith("/web-sources"),
+    );
+    expect(String(posted?.[0])).toContain("/repositories/r-1/web-sources");
+    expect(JSON.parse(String(posted?.[1]?.body))).toEqual({ url: "https://x.test" });
+
+    // The newly added web source appears, linked to its URL.
+    const link = await screen.findByRole("link", { name: "https://x.test" });
+    expect(link).toHaveAttribute("href", "https://x.test");
   });
 });

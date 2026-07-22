@@ -492,6 +492,13 @@ label {
   color: var(--danger);
   background: var(--danger-soft);
 }
+.badge.kind-document,
+.badge.kind-admin_note,
+.badge.kind-image,
+.badge.kind-web {
+  color: var(--muted);
+  background: var(--surface-2);
+}
 /* bare badge (e.g. "Password change owed") */
 .user-item .badge {
   color: var(--warning);
@@ -514,7 +521,8 @@ label {
 .admin-users section,
 .admin-insights section,
 .repo-create,
-.source-upload {
+.source-upload,
+.source-web {
   padding: 1.4rem 1.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -527,6 +535,7 @@ label {
 .repo-config,
 .repo-rename,
 .source-upload,
+.source-web,
 .note-editor,
 .admin-users form,
 .admin-insights form {
@@ -539,6 +548,7 @@ label {
 .repo-config button,
 .repo-rename button,
 .source-upload button,
+.source-web button,
 .note-editor button,
 .admin-users form button,
 .admin-insights form button {
