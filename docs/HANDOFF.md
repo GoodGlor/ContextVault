@@ -30,8 +30,8 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | HEIC support (`__PR__`), squash-merged this session; before it `2934091` (#100) |
-| Last merged PR | **`__PR__`** — HEIC/HEIF image support; before it #100 (image/web sources) |
+| `main` HEAD | HEIC support (`#101`), squash-merged this session; before it `2934091` (#100) |
+| Last merged PR | **`#101`** — HEIC/HEIF image support; before it #100 (image/web sources) |
 | In flight | none |
 
 **Clean state.** Working tree clean; `main` even with `origin/main`. The HEIC PR was
@@ -43,7 +43,7 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 
 ## Done recently (this session)
 
-### HEIC/HEIF image support — `__PR__`, squash-merged
+### HEIC/HEIF image support — `#101`, squash-merged
 
 Admins can now upload `.heic`/`.heif` (iPhone) images as sources. Minimal extension of
 the existing image path — only *decoding* is new; OCR/ingestion/DB `image` kind/citations
