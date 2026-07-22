@@ -22,6 +22,7 @@ from contextvault.api.deps import (
 )
 from contextvault.db.session import get_session
 from contextvault.embeddings.base import EmbeddingProvider
+from contextvault.ingestion import IMAGE_SUFFIXES, file_suffix
 from contextvault.models import Repository, Source, SourceKind, SourceStatus, User
 from contextvault.services import grants as grant_service
 from contextvault.services.ingestion import SessionFactory, run_ingestion
@@ -31,10 +32,6 @@ router = APIRouter(tags=["sources"])
 # Admin Notes are ingested through the same parse→chunk→embed pipeline as uploads by
 # presenting their body as a plain-text document (the filename is not persisted).
 _ADMIN_NOTE_FILENAME = "admin-note.txt"
-
-# Extensions routed to the image parser (card: image ingestion) rather than the
-# document pipeline; matched case-insensitively against the upload's filename.
-_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"}
 
 
 class SourceResponse(BaseModel):
@@ -73,8 +70,8 @@ async def upload_source(
 
     data = await file.read()
     filename = file.filename or "untitled"
-    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    kind = SourceKind.IMAGE if suffix in _IMAGE_SUFFIXES else SourceKind.DOCUMENT
+    suffix = file_suffix(filename)
+    kind = SourceKind.IMAGE if suffix in IMAGE_SUFFIXES else SourceKind.DOCUMENT
     source = Source(
         repository_id=repository_id,
         kind=kind,

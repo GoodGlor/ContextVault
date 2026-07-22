@@ -118,17 +118,22 @@ def _parse_image(data: bytes) -> ParsedDocument:
     return _blocks_from_segments([(text, None)])
 
 
+# Extensions routed to the image parser; the single source of truth for what
+# counts as an "image" upload (also consumed by the sources API to classify
+# a Source's kind without duplicating this enumeration).
+IMAGE_SUFFIXES: frozenset[str] = frozenset({".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"})
+
 _PARSERS = {
     ".txt": _parse_txt,
     ".docx": _parse_docx,
     ".pdf": _parse_pdf,
-    ".png": _parse_image,
-    ".jpg": _parse_image,
-    ".jpeg": _parse_image,
-    ".webp": _parse_image,
-    ".tiff": _parse_image,
-    ".bmp": _parse_image,
+    **{suffix: _parse_image for suffix in IMAGE_SUFFIXES},
 }
+
+
+def file_suffix(filename: str) -> str:
+    """Return ``filename``'s lowercased extension including the dot, or ``""``."""
+    return "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
 
 def parse_document(filename: str, data: bytes) -> ParsedDocument:
@@ -137,7 +142,7 @@ def parse_document(filename: str, data: bytes) -> ParsedDocument:
     Raises ``UnsupportedDocumentError`` for unknown types and
     ``DocumentParseError`` for a supported type that cannot be read.
     """
-    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    suffix = file_suffix(filename)
     parser = _PARSERS.get(suffix)
     if parser is None:
         raise UnsupportedDocumentError(
