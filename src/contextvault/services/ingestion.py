@@ -149,7 +149,7 @@ async def run_web_ingestion(
 
         try:
             html = await asyncio.to_thread(fetch_html, url)
-            text, title = extract_web_text(html)
+            text, title = await asyncio.to_thread(extract_web_text, html)
             if not text.strip():
                 raise ValueError("No readable text found at URL.")
             if title:
