@@ -140,6 +140,14 @@ Tests are isolated from your local `.env`: settings come only from real environm
 variables and code defaults during the suite (`tests/conftest.py` sets
 `CONTEXTVAULT_ENV_FILE=""`), so a local override can never change a test's result.
 
+**End-to-end (Playwright).** A real-browser e2e drives the running app. It needs the
+full stack up, so run it against `./dev.sh` (not part of the pure-Node CI gate):
+
+```bash
+./dev.sh                       # in one terminal (db + backend + frontend + seeded admin)
+cd frontend && npm run test:e2e   # in another — signs in and exercises the admin flow
+```
+
 ## Contributing
 
 Work is tracked as cards on the **ContextVault** GitHub Projects board (each card is a
