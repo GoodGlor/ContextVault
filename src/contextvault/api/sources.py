@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +25,7 @@ from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.ingestion import IMAGE_SUFFIXES, file_suffix
 from contextvault.models import Repository, Source, SourceKind, SourceStatus, User
 from contextvault.services import grants as grant_service
-from contextvault.services.ingestion import SessionFactory, run_ingestion
+from contextvault.services.ingestion import SessionFactory, run_ingestion, run_web_ingestion
 
 router = APIRouter(tags=["sources"])
 
@@ -89,6 +89,52 @@ async def upload_source(
         source.id,
         filename=filename,
         data=data,
+        embedder=embedder,
+        session_factory=session_factory,
+    )
+    return SourceResponse.model_validate(source)
+
+
+class WebSourceRequest(BaseModel):
+    """A URL to fetch and ingest as a single web-page source."""
+
+    url: AnyHttpUrl
+
+
+@router.post(
+    "/repositories/{repository_id}/web-sources",
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_web_source(
+    repository_id: uuid.UUID,
+    payload: WebSourceRequest,
+    background_tasks: BackgroundTasks,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+    embedder: EmbeddingProvider = Depends(get_embedder),
+    session_factory: SessionFactory = Depends(get_ingestion_session_factory),
+) -> SourceResponse:
+    """Add a single web page as a source: fetch + extract run in the background."""
+    repo = await session.get(Repository, repository_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+
+    url = str(payload.url)
+    source = Source(
+        repository_id=repository_id,
+        kind=SourceKind.WEB,
+        title=url,
+        source_url=url,
+        status=SourceStatus.PENDING,
+    )
+    session.add(source)
+    await session.commit()
+    await session.refresh(source)
+
+    background_tasks.add_task(
+        run_web_ingestion,
+        source.id,
+        url=url,
         embedder=embedder,
         session_factory=session_factory,
     )

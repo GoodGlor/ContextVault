@@ -260,3 +260,63 @@ async def test_delete_forbidden_for_non_admin(
     resp = await client.delete(f"/sources/{source_id}", headers=_auth(user))
     assert resp.status_code == 403
     assert await db_session.get(Source, source_id) is not None
+
+
+async def test_add_web_source_creates_web_source(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/web-sources",
+        json={"url": "https://example.com/article"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "web"
+    assert body["source_url"] == "https://example.com/article"
+    assert body["status"] == "pending"
+
+
+async def test_add_web_source_rejects_bad_url(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/web-sources",
+        json={"url": "not a url"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 422
+
+
+async def test_add_web_source_unknown_repo_404(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    import uuid
+
+    token = await _token(client, db_session, Role.ADMIN)
+    resp = await client.post(
+        f"/repositories/{uuid.uuid4()}/web-sources",
+        json={"url": "https://example.com"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 404
+
+
+async def test_add_web_source_forbidden_for_non_admin(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.USER)
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/web-sources",
+        json={"url": "https://example.com"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 403
