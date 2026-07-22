@@ -14,6 +14,13 @@ blocks)`` — so a character offset from a chunk can be mapped back to its block
 from dataclasses import dataclass
 from io import BytesIO
 
+from pillow_heif import register_heif_opener
+
+# Teach Pillow to decode HEIC/HEIF (iPhone photos). Registering here — at import
+# of the parsing module — means the existing ``Image.open`` in ``_parse_image``
+# handles those formats with no further changes.
+register_heif_opener()
+
 
 class DocumentError(Exception):
     """Base class for document-parsing failures."""
@@ -121,7 +128,9 @@ def _parse_image(data: bytes) -> ParsedDocument:
 # Extensions routed to the image parser; the single source of truth for what
 # counts as an "image" upload (also consumed by the sources API to classify
 # a Source's kind without duplicating this enumeration).
-IMAGE_SUFFIXES: frozenset[str] = frozenset({".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"})
+IMAGE_SUFFIXES: frozenset[str] = frozenset(
+    {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp", ".heic", ".heif"}
+)
 
 _PARSERS = {
     ".txt": _parse_txt,

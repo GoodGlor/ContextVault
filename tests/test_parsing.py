@@ -138,6 +138,27 @@ def test_parse_corrupt_image_fails() -> None:
         parse_document("broken.png", b"this is not an image")
 
 
+def _heic_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (32, 16), "white").save(buf, format="HEIF")
+    return buf.getvalue()
+
+
+def test_parse_heic_returns_ocr_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "Hello HEIC")
+    parsed = parse_document("photo.heic", _heic_bytes())
+    assert parsed.text == "Hello HEIC"
+    assert len(parsed.blocks) == 1
+    assert parsed.blocks[0].page is None
+    _assert_contiguous(parsed)
+
+
+def test_parse_heif_extension_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "text")
+    parsed = parse_document("photo.heif", _heic_bytes())
+    assert parsed.text == "text"
+
+
 def test_parsed_from_text_single_block() -> None:
     from contextvault.ingestion.parsing import parsed_from_text
 

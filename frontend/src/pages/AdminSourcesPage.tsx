@@ -162,7 +162,7 @@ export function AdminSourcesPage(): ReactNode {
           type="file"
           ref={fileInput}
           onChange={onFileChange}
-          accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.tiff,.bmp"
+          accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.tiff,.bmp,.heic,.heif"
         />
         <p className="form-hint">
           Images are read with OCR — only text visible in the image is captured.

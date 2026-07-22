@@ -18,6 +18,15 @@ const BLANK_PNG = Buffer.from(
   "base64",
 );
 
+// A 16x16 white HEIC (iPhone format): decodable but text-less. If HEIC decoding
+// works end-to-end it OCRs to nothing and ends FAILED with the text-only message
+// ("No text found in image.") — a decode failure would instead say "Could not
+// read image file.", so this fixture proves the pillow-heif path is wired up.
+const BLANK_HEIC = Buffer.from(
+  "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAXxtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAACJpbG9jAAAAAERAAAEAAQAAAAABoAABAAAAAAAAACsAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRtAAAAAAABAAAA/GlwcnAAAADcaXBjbwAAAHVodmNDAQNwAAAAAAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMAAAMAHroCQGEAAQApQgEBA3AAAAMAkAAAAwAAAwAeoCCBBZbqrprm4CGgwIAAAAyAAAADAIRiAAEABkQBwXPBiQAAABNjb2xybmNseAABAA0ABoAAAAAUaXNwZQAAAAAAAABAAAAAQAAAAChjbGFwAAAAEAAAAAEAAAAQAAAAAf///9AAAAAC////0AAAAAIAAAAQcGl4aQAAAAADCAgIAAAAGGlwbWEAAAAAAAAAAQABBYECAwWEAAAAM21kYXQAAAAnKAGvEyExlvhOUKeW/WMCzQyVTFq5T6Vz3QpQk3J+uP7yh5PFYoLg",
+  "base64",
+);
+
 async function signIn(page: Page): Promise<void> {
   await page.goto("/");
   // Unauthenticated visitors are bounced to the login screen.
@@ -80,4 +89,21 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
   // contract, so the row lands on FAILED with the expected message.
   await expect(imageRow.locator("span.badge.status-failed")).toBeVisible({ timeout: 20_000 });
   await expect(imageRow.getByText("No text found in image.")).toBeVisible();
+
+  // --- HEIC source: an iPhone-format image is classified `image` and decoded
+  // via pillow-heif. This one is text-less, so it too must reach the OCR
+  // text-only failure ("No text found in image.") — proving HEIC decodes rather
+  // than erroring at "Could not read image file." ---
+  await page.getByLabel("Document").setInputFiles({
+    name: "photo.heic",
+    mimeType: "image/heic",
+    buffer: BLANK_HEIC,
+  });
+  await page.getByRole("button", { name: "Upload" }).click();
+
+  const heicRow = page.locator("li.source-item", { hasText: "photo.heic" });
+  await expect(heicRow).toBeVisible();
+  await expect(heicRow.locator("span.badge.kind-image")).toBeVisible();
+  await expect(heicRow.locator("span.badge.status-failed")).toBeVisible({ timeout: 20_000 });
+  await expect(heicRow.getByText("No text found in image.")).toBeVisible();
 });
