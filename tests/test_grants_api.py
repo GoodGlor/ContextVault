@@ -118,7 +118,8 @@ async def test_expired_grant_denies_visibility(
     target = await _user(db_session, Role.USER, "reader")
     repo = await _repo(db_session, "Handbook")
     admin = await _token(client, "admin")
-    past = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+    # Clearly in the past (not a 1-second margin that could race the request clock).
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
 
     resp = await client.post(
         f"/repositories/{repo.id}/grants",
