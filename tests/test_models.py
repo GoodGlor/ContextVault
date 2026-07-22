@@ -95,8 +95,8 @@ def test_sources_belong_to_repository_and_have_kind() -> None:
 
 
 def test_source_kinds_include_image_and_web() -> None:
-    assert SourceKind.IMAGE == "image"
-    assert SourceKind.WEB == "web"
+    assert SourceKind.IMAGE.value == "image"
+    assert SourceKind.WEB.value == "web"
 
 
 def test_source_has_optional_source_url() -> None:
