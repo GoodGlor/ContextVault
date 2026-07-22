@@ -6,6 +6,7 @@ import {
   deleteRepository,
   getLlmConfig,
   listAllRepositories,
+  listModels,
   setLlmConfig,
   updateRepository,
   LLM_PROVIDERS,
@@ -250,6 +251,9 @@ function RepoConfigPanel({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -268,6 +272,26 @@ function RepoConfigPanel({
       cancelled = true;
     };
   }, [repository.id]);
+
+  const onLoadModels = async () => {
+    setLoadingModels(true);
+    setModelsError(null);
+    try {
+      const result = await listModels(repository.id, {
+        provider,
+        // Send the just-entered key if present; otherwise the backend uses the stored one.
+        api_key: apiKey === "" ? undefined : apiKey,
+      });
+      setModels(result.models);
+      if (result.models.length === 0) {
+        setModelsError("The provider returned no models.");
+      }
+    } catch (err) {
+      setModelsError(errorMessage(err, "Could not load models."));
+    } finally {
+      setLoadingModels(false);
+    }
+  };
 
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -302,6 +326,7 @@ function RepoConfigPanel({
   const keyId = `key-${repository.id}`;
   const providerId = `provider-${repository.id}`;
   const modelId = `model-${repository.id}`;
+  const modelListId = `model-options-${repository.id}`;
 
   return (
     <form className="repo-config" onSubmit={onSave}>
@@ -312,7 +337,12 @@ function RepoConfigPanel({
       <select
         id={providerId}
         value={provider}
-        onChange={(e) => setProvider(e.target.value as LLMProvider)}
+        onChange={(e) => {
+          setProvider(e.target.value as LLMProvider);
+          // The old list belongs to the previous provider — clear it.
+          setModels([]);
+          setModelsError(null);
+        }}
       >
         {LLM_PROVIDERS.map((p) => (
           <option key={p.value} value={p.value}>
@@ -322,7 +352,22 @@ function RepoConfigPanel({
       </select>
 
       <label htmlFor={modelId}>Model</label>
-      <input id={modelId} value={model} onChange={(e) => setModel(e.target.value)} required />
+      <input
+        id={modelId}
+        list={modelListId}
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+        required
+      />
+      <datalist id={modelListId}>
+        {models.map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+      <button type="button" onClick={onLoadModels} disabled={loadingModels}>
+        {loadingModels ? "Loading models…" : "Load models"}
+      </button>
+      {modelsError !== null && <p className="error">{modelsError}</p>}
 
       <label htmlFor={keyId}>API key</label>
       <input

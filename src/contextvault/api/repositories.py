@@ -14,8 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_current_user, require_admin
+from contextvault.core.config import get_settings
 from contextvault.core.crypto import decrypt, encrypt, mask_key
 from contextvault.db.session import get_session
+from contextvault.llm.models import ModelListError, list_models
 from contextvault.models import LLMProviderName, Repository, User
 from contextvault.services import grants as grant_service
 
@@ -28,6 +30,24 @@ class LLMConfigRequest(BaseModel):
     provider: LLMProviderName
     model: str = Field(min_length=1)
     api_key: str = Field(min_length=1)
+
+
+class ListModelsRequest(BaseModel):
+    """Ask a provider for its available models (feature B).
+
+    ``api_key`` is the just-entered key; when omitted/blank the endpoint falls back to
+    the repository's stored key, so an already-configured repo can reload its list
+    without the client re-sending the (masked) secret.
+    """
+
+    provider: LLMProviderName
+    api_key: str | None = None
+
+
+class ListModelsResponse(BaseModel):
+    """The model ids a provider currently offers, for the admin dropdown."""
+
+    models: list[str]
 
 
 class RepositoryCreateRequest(BaseModel):
@@ -219,3 +239,32 @@ async def get_llm_config(
     """Read a repository's LLM configuration (key masked; nulls if unconfigured)."""
     repo = await _get_repo(session, repository_id)
     return _config_response(repo)
+
+
+@router.post("/repositories/{repository_id}/llm-models")
+async def list_llm_models(
+    repository_id: uuid.UUID,
+    payload: ListModelsRequest,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> ListModelsResponse:
+    """Fetch ``payload.provider``'s available models, for the admin model dropdown.
+
+    Uses the just-entered ``api_key`` when present, else the repository's stored key.
+    A provider failure (bad key, network) surfaces as a 400 rather than a 500.
+    """
+    repo = await _get_repo(session, repository_id)
+    key = (payload.api_key or "").strip()
+    if not key and repo.api_key_encrypted:
+        key = decrypt(repo.api_key_encrypted)
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No API key available to list models.",
+        )
+    base_url = get_settings().openrouter_base_url if payload.provider == "openrouter" else None
+    try:
+        models = await list_models(payload.provider, key, base_url=base_url)
+    except ModelListError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ListModelsResponse(models=models)

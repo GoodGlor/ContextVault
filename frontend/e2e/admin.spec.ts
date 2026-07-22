@@ -38,6 +38,21 @@ test("admin signs in, navigates the admin nav, and creates a repository", async 
   await expect(row).toBeVisible();
   await expect(row.getByText("Not configured")).toBeVisible();
 
+  // Model dropdown (feature B): opening config and clicking "Load models" with a
+  // bad key hits the real /llm-models endpoint, which asks the provider and gets
+  // rejected — the UI must surface that as a clean error rather than crashing.
+  // (This proves the endpoint + button + error wiring end-to-end without needing a
+  // valid provider key.)
+  await row.getByRole("button", { name: "Configure" }).click();
+  await expect(row.getByRole("button", { name: "Load models" })).toBeVisible();
+  await row.getByLabel("API key").fill("sk-not-a-real-key");
+  await row.getByRole("button", { name: "Load models" }).click();
+  await expect(row.getByText(/could not (list|load) models|no api key/i)).toBeVisible({
+    timeout: 20_000,
+  });
+  // Close the panel again so it doesn't interfere with later assertions.
+  await row.getByRole("button", { name: "Configure" }).click();
+
   // The other admin surfaces are reachable and render.
   await page.getByRole("link", { name: "Insights" }).click();
   await expect(page.getByRole("heading", { name: "Insights" })).toBeVisible();

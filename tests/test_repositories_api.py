@@ -190,3 +190,121 @@ async def test_set_config_rejects_blank_key(db_session: AsyncSession, client: As
         headers=_auth(token),
     )
     assert resp.status_code == 422
+
+
+# --- list-models endpoint (feature B) ---------------------------------------
+
+
+async def test_list_models_uses_entered_key(
+    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+    seen: dict[str, object] = {}
+
+    async def fake_list_models(
+        provider: str, api_key: str, *, base_url: str | None = None
+    ) -> list[str]:
+        seen["provider"], seen["api_key"] = provider, api_key
+        return ["gpt-4o", "o3-mini"]
+
+    monkeypatch.setattr("contextvault.api.repositories.list_models", fake_list_models)
+    resp = await client.post(
+        f"/repositories/{repo.id}/llm-models",
+        json={"provider": "openai", "api_key": "sk-entered"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["models"] == ["gpt-4o", "o3-mini"]
+    assert seen == {"provider": "openai", "api_key": "sk-entered"}
+
+
+async def test_list_models_falls_back_to_stored_key(
+    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+    # Configure the repo so it has a stored (encrypted) key.
+    await client.put(f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token))
+    seen: dict[str, object] = {}
+
+    async def fake_list_models(
+        provider: str, api_key: str, *, base_url: str | None = None
+    ) -> list[str]:
+        seen["api_key"] = api_key
+        return ["gpt-4o"]
+
+    monkeypatch.setattr("contextvault.api.repositories.list_models", fake_list_models)
+    resp = await client.post(
+        f"/repositories/{repo.id}/llm-models",
+        json={"provider": "openai"},  # no api_key → stored key
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert seen["api_key"] == _KEY  # the decrypted stored key
+
+
+async def test_list_models_no_key_available_400(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)  # unconfigured — no stored key
+    token = await _token(client, db_session, Role.ADMIN)
+    resp = await client.post(
+        f"/repositories/{repo.id}/llm-models",
+        json={"provider": "openai"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+
+
+async def test_list_models_provider_error_is_400(
+    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextvault.llm.models import ModelListError
+
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+
+    async def boom(provider: str, api_key: str, *, base_url: str | None = None) -> list[str]:
+        raise ModelListError("Could not list models: invalid key")
+
+    monkeypatch.setattr("contextvault.api.repositories.list_models", boom)
+    resp = await client.post(
+        f"/repositories/{repo.id}/llm-models",
+        json={"provider": "openai", "api_key": "bad"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+    assert "Could not list models" in resp.json()["detail"]
+
+
+async def test_list_models_forbidden_for_non_admin(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.USER)
+    resp = await client.post(
+        f"/repositories/{repo.id}/llm-models",
+        json={"provider": "openai", "api_key": "x"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 403
+
+
+async def test_list_models_unknown_repo_404(
+    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = await _token(client, db_session, Role.ADMIN)
+
+    async def fake_list_models(
+        provider: str, api_key: str, *, base_url: str | None = None
+    ) -> list[str]:
+        return []
+
+    monkeypatch.setattr("contextvault.api.repositories.list_models", fake_list_models)
+    resp = await client.post(
+        f"/repositories/{uuid.uuid4()}/llm-models",
+        json={"provider": "openai", "api_key": "x"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 404
