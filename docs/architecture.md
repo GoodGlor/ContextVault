@@ -179,7 +179,7 @@ the two must match the model's output width and the pgvector column.
 ## Document parsing
 
 Uploads are turned into text by `parse_document(filename, data)`, the first stage
-of the ingestion pipeline. It supports **PDF, DOCX, and TXT** and returns a
+of the ingestion pipeline. It supports **PDF, DOCX, TXT, and images** and returns a
 `ParsedDocument` — the full text plus positioned `TextBlock`s that tile it exactly.
 Each block records its character span and, for PDFs, its 1-based page, so a citation
 can later map a character offset back to its source passage.
@@ -194,6 +194,20 @@ doc.blocks[0].page, doc.blocks[0].start     # position info for citations
 
 Unsupported types raise `UnsupportedDocumentError`; corrupt or invalid files of a
 supported type raise `DocumentParseError`.
+
+### Images (local OCR)
+
+Files with an image suffix — `.png .jpg .jpeg .webp .tiff .bmp` (`IMAGE_SUFFIXES`)
+— are routed to the image parser instead of a document parser. It decodes the file
+with Pillow, then reads text out of it with **local** OCR
+([`rapidocr-onnxruntime`](https://github.com/RapidAI/RapidOCR), lazily loaded once
+and cached) via `ocr_image` — no third-party OCR service ever sees the image. OCR
+is **text-only**: it produces one page-less block of recognized text, with no
+layout/position info beyond that. An unreadable image file raises
+`DocumentParseError("Could not read image file.")`; an image with no recognizable
+text raises `DocumentParseError("No text found in image.")`, which the ingestion
+pipeline (below) turns into a `FAILED` source with that message in `ingest_error`
+rather than storing an empty source.
 
 ## Chunking
 
@@ -243,6 +257,39 @@ Because ingestion is slower than a request should block on, `run_ingestion(sourc
 session (the request's is already closed by the time it runs) and delegates to
 `ingest_source`. The embedding call runs off the event loop so it doesn't block other
 requests.
+
+`ingest_source` and `run_web_ingestion` (below) share a single writer,
+`store_parsed(session, source, parsed, embedder)` — chunk → embed → replace-chunks →
+mark `DONE` — so document/image ingestion and web ingestion converge on identical
+storage behavior once they have a `ParsedDocument`.
+
+### Web-link sources
+
+`run_web_ingestion(source_id, url=…, embedder=…)` is the background-task seam for a
+web-link source (mirrors `run_ingestion`): it marks the source `PROCESSING`, fetches
+the page and extracts its main text off the event loop, then hands the result to
+`store_parsed`. A page with no extractable text fails the source with `"No readable
+text found at URL."`; on success, a title recovered from the page's metadata
+replaces the source's title (the URL).
+
+The fetch itself, `web_source.fetch_html(url)`, guards against fetching an
+untrusted or hostile URL:
+
+- **Scheme:** only `http`/`https` are accepted.
+- **SSRF:** every hostname — including on each redirect hop — is resolved and
+  rejected if any resolved address is private, loopback, link-local, reserved,
+  multicast, or unspecified, so a URL can't be used to reach internal
+  infrastructure.
+- **Redirects:** followed manually (not via the HTTP client) up to 5 hops, each
+  re-validated the same way; more hops raise `"Too many redirects."`.
+- **Content type:** non-HTML/text responses are rejected.
+- **Size cap:** the body is streamed and capped at 5 MiB; exceeding it raises
+  `"Response exceeds the size cap."`.
+- **Timeout:** a 15-second request timeout.
+
+`web_source.extract_web_text(html)` then pulls the main article text (and title)
+out of the fetched HTML with [trafilatura](https://trafilatura.readthedocs.io/),
+discarding boilerplate (nav, ads, footers).
 
 ## Access grants (admin)
 
@@ -443,11 +490,18 @@ require an admin bearer token; non-admins get `403`.
 
 | Method & path | Purpose |
 |---|---|
-| `POST /repositories/{id}/sources` | Upload a document (multipart `file`). Creates the source `pending` and schedules background ingestion; returns `201` with the source. |
+| `POST /repositories/{id}/sources` | Upload a file (multipart `file`). Creates the source `pending` and schedules background ingestion; returns `201` with the source. This one endpoint handles both documents and images — a filename whose suffix is one of `IMAGE_SUFFIXES` is tagged `kind: "image"` and routed to OCR (see *Document parsing*) instead of the document parsers; there is no separate image-upload route. |
+| `POST /repositories/{id}/web-sources` | Add a single web page as a source: body `{"url": "https://..."}`. Creates a `kind: "web"` source `pending` (`title` and `source_url` set to the URL, `title` later replaced by the page's own title if one is found) and schedules a background fetch + extract; returns `201` with the source. `404` if the repository is unknown; `422` if `url` is not a well-formed `http`/`https` URL. |
 | `POST /repositories/{id}/admin-notes` | Write an **Admin Note** (JSON `{"title": "...", "content": "..."}`). Creates an `admin_note` source attributed to the author and schedules ingestion; returns `201`. |
 | `GET /repositories/{id}/sources` | List a repository's sources (oldest first). |
 | `GET /sources/{id}` | Fetch one source, including `status` and `ingest_error`. |
 | `DELETE /sources/{id}` | Delete a source; its chunks cascade away. |
+
+`SourceResponse` (the shape returned by the endpoints above) carries: `id`,
+`repository_id`, `kind` (`document` / `admin_note` / `image` / `web`), `title`,
+`original_filename` (the uploaded filename; `None` for admin notes and web
+sources), `source_url` (the fetched URL for a `web` source; `None` otherwise),
+`status`, `ingest_error`, and `created_at`.
 
 One endpoint here is **not** admin-only — it is the user-facing counterpart that lets a
 reader open a cited passage (card #90):

@@ -25,6 +25,8 @@ LLM, so different corpora can answer with different models.
   verified sources), and usage analytics show what's working.
 - **Admin web UI + REST API** — a React SPA over a documented FastAPI backend, with
   admin surfaces for repositories, sources, users/grants, and insights.
+- **Multiple source kinds** — PDF/DOCX/TXT documents, Admin Notes, images (local OCR,
+  text-only), and web links (single page) are all ingestible sources.
 - **Local, multilingual embeddings** — sentence-transformers (bge-m3), so no documents
   or queries leave for a third-party embedding service.
 

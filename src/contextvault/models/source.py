@@ -1,4 +1,4 @@
-"""Source model — an uploaded document or an admin-authored note."""
+"""Source model — a document, admin note, image, or web page."""
 
 import uuid
 
@@ -25,6 +25,8 @@ class Source(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     # Set for uploaded documents; null for admin notes.
     original_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # The fetched URL for a WEB source; null for every other kind.
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     # Extracted document text or the admin note body.
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Ingestion pipeline state (parse→chunk→embed→store); PENDING until it runs.

@@ -60,6 +60,11 @@ def _blocks_from_segments(segments: list[tuple[str, int | None]]) -> ParsedDocum
     return ParsedDocument(text="".join(b.text for b in blocks), blocks=tuple(blocks))
 
 
+def parsed_from_text(text: str) -> ParsedDocument:
+    """Wrap ready-made text (e.g. an extracted web page) as a single page-less block."""
+    return _blocks_from_segments([(text, None)])
+
+
 def _parse_txt(data: bytes) -> ParsedDocument:
     try:
         text = data.decode("utf-8")
@@ -96,11 +101,39 @@ def _parse_pdf(data: bytes) -> ParsedDocument:
     return _blocks_from_segments(segments)
 
 
+def _parse_image(data: bytes) -> ParsedDocument:
+    from PIL import Image, UnidentifiedImageError
+
+    from contextvault.ingestion.ocr import ocr_image
+
+    try:
+        image = Image.open(BytesIO(data))
+        image.load()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise DocumentParseError("Could not read image file.") from exc
+
+    text = ocr_image(image)
+    if not text.strip():
+        raise DocumentParseError("No text found in image.")
+    return _blocks_from_segments([(text, None)])
+
+
+# Extensions routed to the image parser; the single source of truth for what
+# counts as an "image" upload (also consumed by the sources API to classify
+# a Source's kind without duplicating this enumeration).
+IMAGE_SUFFIXES: frozenset[str] = frozenset({".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"})
+
 _PARSERS = {
     ".txt": _parse_txt,
     ".docx": _parse_docx,
     ".pdf": _parse_pdf,
+    **{suffix: _parse_image for suffix in IMAGE_SUFFIXES},
 }
+
+
+def file_suffix(filename: str) -> str:
+    """Return ``filename``'s lowercased extension including the dot, or ``""``."""
+    return "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
 
 def parse_document(filename: str, data: bytes) -> ParsedDocument:
@@ -109,7 +142,7 @@ def parse_document(filename: str, data: bytes) -> ParsedDocument:
     Raises ``UnsupportedDocumentError`` for unknown types and
     ``DocumentParseError`` for a supported type that cannot be read.
     """
-    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    suffix = file_suffix(filename)
     parser = _PARSERS.get(suffix)
     if parser is None:
         raise UnsupportedDocumentError(

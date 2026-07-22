@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { ApiError } from "../api/client";
 import { listAllRepositories, type AdminRepository } from "../api/repositories";
-import { deleteSource, isIngesting, listSources, uploadSource, type Source } from "../api/sources";
+import {
+  addWebSource,
+  deleteSource,
+  isIngesting,
+  listSources,
+  uploadSource,
+  type Source,
+} from "../api/sources";
 
 /** How often to re-poll while any source is still being ingested. */
 export const SOURCE_POLL_MS = 2000;
@@ -24,6 +31,10 @@ export function AdminSourcesPage(): ReactNode {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const [webUrl, setWebUrl] = useState("");
+  const [addingWeb, setAddingWeb] = useState(false);
+  const [webError, setWebError] = useState<string | null>(null);
 
   // Load the admin's full repository list and default to the first one.
   useEffect(() => {
@@ -96,6 +107,22 @@ export function AdminSourcesPage(): ReactNode {
     }
   };
 
+  const onAddWeb = async (e: FormEvent) => {
+    e.preventDefault();
+    if (selected === "" || webUrl.trim() === "") return;
+    setAddingWeb(true);
+    setWebError(null);
+    try {
+      const created = await addWebSource(selected, webUrl.trim());
+      setSources((prev) => [...(prev ?? []), created]);
+      setWebUrl("");
+    } catch (err) {
+      setWebError(errorMessage(err, "Could not add the link."));
+    } finally {
+      setAddingWeb(false);
+    }
+  };
+
   const onDelete = async (id: string) => {
     try {
       await deleteSource(id);
@@ -130,11 +157,35 @@ export function AdminSourcesPage(): ReactNode {
 
       <form className="source-upload" onSubmit={onUpload}>
         <label htmlFor="source-file">Document</label>
-        <input id="source-file" type="file" ref={fileInput} onChange={onFileChange} />
+        <input
+          id="source-file"
+          type="file"
+          ref={fileInput}
+          onChange={onFileChange}
+          accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.tiff,.bmp"
+        />
+        <p className="form-hint">
+          Images are read with OCR — only text visible in the image is captured.
+        </p>
         <button type="submit" disabled={uploading || file === null}>
           Upload
         </button>
         {uploadError !== null && <p className="error">{uploadError}</p>}
+      </form>
+
+      <form className="source-web" onSubmit={onAddWeb}>
+        <label htmlFor="source-url">Web link</label>
+        <input
+          id="source-url"
+          type="url"
+          placeholder="https://example.com/article"
+          value={webUrl}
+          onChange={(e) => setWebUrl(e.target.value)}
+        />
+        <button type="submit" disabled={addingWeb || webUrl.trim() === ""}>
+          Add link
+        </button>
+        {webError !== null && <p className="error">{webError}</p>}
       </form>
 
       {sourcesError !== null && <p className="error">{sourcesError}</p>}
@@ -146,7 +197,14 @@ export function AdminSourcesPage(): ReactNode {
         <ul className="source-list">
           {sources.map((s) => (
             <li key={s.id} className="source-item">
-              <span className="source-title">{s.title}</span>
+              <span className={`badge kind-${s.kind}`}>{s.kind}</span>
+              {s.kind === "web" && s.source_url !== null ? (
+                <a className="source-title" href={s.source_url} target="_blank" rel="noreferrer">
+                  {s.title}
+                </a>
+              ) : (
+                <span className="source-title">{s.title}</span>
+              )}
               <span className={`badge status-${s.status}`}>{s.status}</span>
               {s.status === "failed" && s.ingest_error !== null && (
                 <span className="source-error">{s.ingest_error}</span>

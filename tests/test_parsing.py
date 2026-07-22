@@ -10,6 +10,7 @@ from io import BytesIO
 import pytest
 from docx import Document
 from fpdf import FPDF
+from PIL import Image
 
 from contextvault.ingestion import (
     DocumentParseError,
@@ -109,3 +110,38 @@ def test_corrupt_pdf_raises_parse_error() -> None:
 def test_corrupt_docx_raises_parse_error() -> None:
     with pytest.raises(DocumentParseError):
         parse_document("broken.docx", b"PK not really a docx")
+
+
+def _png_bytes() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (32, 16), "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_parse_image_returns_ocr_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "Hello world")
+    parsed = parse_document("scan.png", _png_bytes())
+    assert parsed.text == "Hello world"
+    assert len(parsed.blocks) == 1
+    assert parsed.blocks[0].page is None
+    _assert_contiguous(parsed)
+
+
+def test_parse_image_without_text_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "   ")
+    with pytest.raises(DocumentParseError, match="No text found in image"):
+        parse_document("blank.png", _png_bytes())
+
+
+def test_parse_corrupt_image_fails() -> None:
+    with pytest.raises(DocumentParseError, match="Could not read image file"):
+        parse_document("broken.png", b"this is not an image")
+
+
+def test_parsed_from_text_single_block() -> None:
+    from contextvault.ingestion.parsing import parsed_from_text
+
+    parsed = parsed_from_text("some page text")
+    assert parsed.text == "some page text"
+    assert len(parsed.blocks) == 1
+    assert parsed.blocks[0].page is None

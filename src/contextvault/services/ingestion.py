@@ -21,8 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.db.session import SessionLocal
 from contextvault.embeddings.base import EmbeddingProvider
-from contextvault.ingestion import chunk_document, parse_document
+from contextvault.ingestion import chunk_document, parse_document, parsed_from_text
 from contextvault.models import Chunk, Source, SourceStatus
+from contextvault.services.web_source import extract_web_text, fetch_html
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -51,38 +52,56 @@ async def ingest_source(
 
     try:
         parsed = parse_document(filename, data)
-        chunks = chunk_document(parsed)
-        # Embedding may be slow and is synchronous; run it off the event loop.
-        vectors = await asyncio.to_thread(embedder.embed, [c.text for c in chunks])
-
-        # Idempotent re-ingest: drop any chunks from a previous run first.
-        await session.execute(sa.delete(Chunk).where(Chunk.source_id == source_id))
-        session.add_all(
-            [
-                Chunk(
-                    source_id=source_id,
-                    repository_id=source.repository_id,
-                    ordinal=chunk.ordinal,
-                    content=chunk.text,
-                    char_start=chunk.char_start,
-                    char_end=chunk.char_end,
-                    embedding=vector,
-                )
-                for chunk, vector in zip(chunks, vectors, strict=True)
-            ]
-        )
-        source.content = parsed.text
-        source.status = SourceStatus.DONE
-        source.ingest_error = None
-        await session.commit()
+        await store_parsed(session, source, parsed, embedder)
     except Exception as exc:
-        # Discard any partial writes, then record the failure on the source.
-        await session.rollback()
-        failed = await session.get(Source, source_id)
-        if failed is not None:
-            failed.status = SourceStatus.FAILED
-            failed.ingest_error = f"{type(exc).__name__}: {exc}"
-            await session.commit()
+        await _record_failure(session, source_id, exc)
+
+
+async def store_parsed(
+    session: AsyncSession,
+    source: Source,
+    parsed: object,
+    embedder: EmbeddingProvider,
+) -> None:
+    """Chunk → embed → replace-chunks → mark DONE for an already-parsed source.
+
+    The single writer of chunks, shared by document/image ingestion and web
+    ingestion. ``parsed`` is a ``ParsedDocument``. Commits on success.
+    """
+    chunks = chunk_document(parsed)  # type: ignore[arg-type]
+    # Embedding may be slow and is synchronous; run it off the event loop.
+    vectors = await asyncio.to_thread(embedder.embed, [c.text for c in chunks])
+
+    # Idempotent re-ingest: drop any chunks from a previous run first.
+    await session.execute(sa.delete(Chunk).where(Chunk.source_id == source.id))
+    session.add_all(
+        [
+            Chunk(
+                source_id=source.id,
+                repository_id=source.repository_id,
+                ordinal=chunk.ordinal,
+                content=chunk.text,
+                char_start=chunk.char_start,
+                char_end=chunk.char_end,
+                embedding=vector,
+            )
+            for chunk, vector in zip(chunks, vectors, strict=True)
+        ]
+    )
+    source.content = parsed.text  # type: ignore[attr-defined]
+    source.status = SourceStatus.DONE
+    source.ingest_error = None
+    await session.commit()
+
+
+async def _record_failure(session: AsyncSession, source_id: uuid.UUID, exc: Exception) -> None:
+    """Roll back partial writes and persist the failure on the source."""
+    await session.rollback()
+    failed = await session.get(Source, source_id)
+    if failed is not None:
+        failed.status = SourceStatus.FAILED
+        failed.ingest_error = f"{type(exc).__name__}: {exc}"
+        await session.commit()
 
 
 async def run_ingestion(
@@ -104,3 +123,37 @@ async def run_ingestion(
         if source is None:
             return
         await ingest_source(session, source, filename=filename, data=data, embedder=embedder)
+
+
+async def run_web_ingestion(
+    source_id: uuid.UUID,
+    *,
+    url: str,
+    embedder: EmbeddingProvider,
+    session_factory: SessionFactory = SessionLocal,
+) -> None:
+    """Background-task seam: fetch ``url``, extract its text, and ingest ``source_id``.
+
+    Mirrors :func:`run_ingestion` for web-link sources — opens its own session,
+    marks the source PROCESSING, fetches + extracts (off the event loop), and
+    stores via :func:`store_parsed`. Any failure is captured on the source.
+    """
+    async with session_factory() as session:
+        source = await session.get(Source, source_id)
+        if source is None:
+            return
+
+        source.status = SourceStatus.PROCESSING
+        source.ingest_error = None
+        await session.commit()
+
+        try:
+            html = await asyncio.to_thread(fetch_html, url)
+            text, title = await asyncio.to_thread(extract_web_text, html)
+            if not text.strip():
+                raise ValueError("No readable text found at URL.")
+            if title:
+                source.title = title
+            await store_parsed(session, source, parsed_from_text(text), embedder)
+        except Exception as exc:
+            await _record_failure(session, source_id, exc)
