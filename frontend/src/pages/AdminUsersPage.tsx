@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { createInvitation, type Invitation, type Role } from "../api/invitations";
 import { deleteUser, listUsers, resetUserPassword, type AdminUser } from "../api/users";
@@ -10,12 +11,9 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.detail : fallback;
 }
 
-function roleLabel(role: Role): string {
-  return role === "admin" ? "Admin" : "User";
-}
-
 /** Admin surface for accounts and repository access (card #39). */
 export function AdminUsersPage(): ReactNode {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [repos, setRepos] = useState<AdminRepository[] | null>(null);
@@ -26,26 +24,27 @@ export function AdminUsersPage(): ReactNode {
     listUsers()
       .then((u) => !cancelled && setUsers(u))
       .catch(
-        (err: unknown) => !cancelled && setUsersError(errorMessage(err, "Failed to load users.")),
+        (err: unknown) =>
+          !cancelled && setUsersError(errorMessage(err, t("users.loadUsersError"))),
       );
     listAllRepositories()
       .then((r) => !cancelled && setRepos(r))
       .catch(
         (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, "Failed to load repositories.")),
+          !cancelled && setReposError(errorMessage(err, t("users.loadReposError"))),
       );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   if (usersError !== null) return <p className="error">{usersError}</p>;
   if (reposError !== null) return <p className="error">{reposError}</p>;
-  if (users === null || repos === null) return <p>Loading…</p>;
+  if (users === null || repos === null) return <p>{t("users.loading")}</p>;
 
   return (
     <div className="admin-users">
-      <h1>Users &amp; access</h1>
+      <h1>{t("users.title")}</h1>
       <InviteForm />
       <AccountsList
         users={users}
@@ -58,6 +57,7 @@ export function AdminUsersPage(): ReactNode {
 
 /** Issue an onboarding invite and reveal its one-time token. */
 function InviteForm(): ReactNode {
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [role, setRole] = useState<Role>("user");
   const [busy, setBusy] = useState(false);
@@ -75,37 +75,36 @@ function InviteForm(): ReactNode {
       setInvite(inv);
       setUsername("");
     } catch (err) {
-      setError(errorMessage(err, "Could not create the invite."));
+      setError(errorMessage(err, t("users.createInviteError")));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <section aria-label="Invite a user">
-      <h2>Invite a user</h2>
+    <section aria-label={t("users.inviteSection")}>
+      <h2>{t("users.inviteHeading")}</h2>
       <form onSubmit={onSubmit}>
-        <label htmlFor="invite-username">Username</label>
+        <label htmlFor="invite-username">{t("users.usernameLabel")}</label>
         <input
           id="invite-username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
-        <label htmlFor="invite-role">Role</label>
+        <label htmlFor="invite-role">{t("users.roleLabel")}</label>
         <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
+          <option value="user">{t("users.roleUser")}</option>
+          <option value="admin">{t("users.roleAdmin")}</option>
         </select>
         <button type="submit" disabled={busy || username.trim() === ""}>
-          Send invite
+          {t("users.sendInvite")}
         </button>
         {error !== null && <p className="error">{error}</p>}
       </form>
       {invite !== null && (
         <p className="invite-link">
-          Invite link for <strong>{invite.username}</strong>:{" "}
-          <code>/accept-invite?token={invite.token}</code> (share it once — it isn&apos;t shown
-          again).
+          {t("users.inviteLinkPrefix")} <strong>{invite.username}</strong>:{" "}
+          <code>/accept-invite?token={invite.token}</code> {t("users.inviteLinkNote")}
         </p>
       )}
     </section>
@@ -120,9 +119,10 @@ function AccountsList({
   users: AdminUser[];
   onDeleted: (id: string) => void;
 }): ReactNode {
+  const { t } = useTranslation();
   return (
-    <section aria-label="Accounts">
-      <h2>Accounts</h2>
+    <section aria-label={t("users.accountsSection")}>
+      <h2>{t("users.accountsHeading")}</h2>
       <ul className="user-list">
         {users.map((u) => (
           <UserRow key={u.id} user={u} onDeleted={() => onDeleted(u.id)} />
@@ -133,6 +133,7 @@ function AccountsList({
 }
 
 function UserRow({ user, onDeleted }: { user: AdminUser; onDeleted: () => void }): ReactNode {
+  const { t } = useTranslation();
   const [temp, setTemp] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -147,7 +148,7 @@ function UserRow({ user, onDeleted }: { user: AdminUser; onDeleted: () => void }
       const result = await resetUserPassword(user.id);
       setTemp(result.temporary_password);
     } catch (err) {
-      setError(errorMessage(err, "Could not reset the password."));
+      setError(errorMessage(err, t("users.resetPasswordError")));
     } finally {
       setResetting(false);
     }
@@ -161,7 +162,7 @@ function UserRow({ user, onDeleted }: { user: AdminUser; onDeleted: () => void }
       await deleteUser(user.id, confirmName);
       onDeleted();
     } catch (err) {
-      setError(errorMessage(err, "Could not delete the user."));
+      setError(errorMessage(err, t("users.deleteUserError")));
       setDeleting(false);
     }
   };
@@ -169,18 +170,20 @@ function UserRow({ user, onDeleted }: { user: AdminUser; onDeleted: () => void }
   return (
     <li className="user-item">
       <span className="user-name">{user.username}</span>
-      <span className="user-role">{roleLabel(user.role)}</span>
-      {user.must_change_password && <span className="badge">Password change owed</span>}
+      <span className="user-role">
+        {user.role === "admin" ? t("users.roleAdmin") : t("users.roleUser")}
+      </span>
+      {user.must_change_password && <span className="badge">{t("users.passwordChangeOwed")}</span>}
       <button type="button" onClick={onReset} disabled={resetting}>
-        Reset password
+        {t("users.resetPassword")}
       </button>
       {!confirming ? (
         <button type="button" onClick={() => setConfirming(true)}>
-          Delete
+          {t("users.delete")}
         </button>
       ) : (
         <span className="confirm-delete">
-          <label htmlFor={`confirm-${user.id}`}>Confirm username</label>
+          <label htmlFor={`confirm-${user.id}`}>{t("users.confirmUsername")}</label>
           <input
             id={`confirm-${user.id}`}
             value={confirmName}
@@ -191,13 +194,13 @@ function UserRow({ user, onDeleted }: { user: AdminUser; onDeleted: () => void }
             onClick={onDelete}
             disabled={deleting || confirmName !== user.username}
           >
-            Confirm delete
+            {t("users.confirmDelete")}
           </button>
         </span>
       )}
       {temp !== null && (
         <p className="temp-password">
-          Temporary password: <code>{temp}</code>
+          {t("users.temporaryPassword")} <code>{temp}</code>
         </p>
       )}
       {error !== null && <p className="error">{error}</p>}
@@ -213,6 +216,7 @@ function GrantsPanel({
   users: AdminUser[];
   repos: AdminRepository[];
 }): ReactNode {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState(repos[0]?.id ?? "");
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -229,11 +233,13 @@ function GrantsPanel({
     setError(null);
     listGrants(selected)
       .then((g) => !cancelled && setGrants(g))
-      .catch((err: unknown) => !cancelled && setError(errorMessage(err, "Failed to load grants.")));
+      .catch(
+        (err: unknown) => !cancelled && setError(errorMessage(err, t("users.loadGrantsError"))),
+      );
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [selected, t]);
 
   const onGrant = async (e: FormEvent) => {
     e.preventDefault();
@@ -249,7 +255,7 @@ function GrantsPanel({
       setGrants(refreshed);
       setExpires("");
     } catch (err) {
-      setError(errorMessage(err, "Could not grant access."));
+      setError(errorMessage(err, t("users.grantAccessError")));
     } finally {
       setGranting(false);
     }
@@ -262,14 +268,14 @@ function GrantsPanel({
       await revokeAccess(selected, userId);
       setGrants((prev) => prev?.filter((g) => g.user_id !== userId) ?? prev);
     } catch (err) {
-      setError(errorMessage(err, "Could not revoke access."));
+      setError(errorMessage(err, t("users.revokeAccessError")));
     }
   };
 
   return (
-    <section aria-label="Repository access">
-      <h2>Repository access</h2>
-      <label htmlFor="grant-repo">Repository</label>
+    <section aria-label={t("users.repoAccessSection")}>
+      <h2>{t("users.repoAccessHeading")}</h2>
+      <label htmlFor="grant-repo">{t("users.repository")}</label>
       <select id="grant-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
         {repos.map((r) => (
           <option key={r.id} value={r.id}>
@@ -279,7 +285,7 @@ function GrantsPanel({
       </select>
 
       <form onSubmit={onGrant}>
-        <label htmlFor="grant-user">Grant to</label>
+        <label htmlFor="grant-user">{t("users.grantTo")}</label>
         <select id="grant-user" value={target} onChange={(e) => setTarget(e.target.value)}>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
@@ -287,7 +293,7 @@ function GrantsPanel({
             </option>
           ))}
         </select>
-        <label htmlFor="grant-expires">Expires</label>
+        <label htmlFor="grant-expires">{t("users.expires")}</label>
         <input
           id="grant-expires"
           type="date"
@@ -295,25 +301,27 @@ function GrantsPanel({
           onChange={(e) => setExpires(e.target.value)}
         />
         <button type="submit" disabled={granting || target === ""}>
-          Grant access
+          {t("users.grantAccess")}
         </button>
       </form>
 
       {error !== null && <p className="error">{error}</p>}
       {grants === null ? (
-        <p>Loading grants…</p>
+        <p>{t("users.loadingGrants")}</p>
       ) : grants.length === 0 ? (
-        <p>No grants yet.</p>
+        <p>{t("users.noGrantsYet")}</p>
       ) : (
         <ul className="grant-list">
           {grants.map((g) => (
             <li key={g.id} className="grant-item">
               <span className="grant-user">{usernameOf(g.user_id)}</span>
               <span className="grant-expiry">
-                {g.expires_at === null ? "no expiry" : `until ${g.expires_at}`}
+                {g.expires_at === null
+                  ? t("users.noExpiry")
+                  : t("users.until", { date: g.expires_at })}
               </span>
               <button type="button" onClick={() => onRevoke(g.user_id)}>
-                Revoke
+                {t("users.revoke")}
               </button>
             </li>
           ))}

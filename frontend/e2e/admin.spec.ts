@@ -10,6 +10,9 @@ import { test, expect } from "@playwright/test";
 const ADMIN = { username: "admin", password: "adminpass123" };
 
 async function signIn(page: import("@playwright/test").Page) {
+  // The app defaults to Ukrainian; pin the browser to English so the English-string
+  // assertions below hold. (The language switch itself is covered by unit tests.)
+  await page.addInitScript(() => window.localStorage.setItem("contextvault.locale", "en"));
   await page.goto("/");
   // Unauthenticated visitors are bounced to the login screen.
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();

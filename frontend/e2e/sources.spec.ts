@@ -28,6 +28,9 @@ const BLANK_HEIC = Buffer.from(
 );
 
 async function signIn(page: Page): Promise<void> {
+  // The app defaults to Ukrainian; pin the browser to English so the English-string
+  // assertions below hold. (The language switch itself is covered by unit tests.)
+  await page.addInitScript(() => window.localStorage.setItem("contextvault.locale", "en"));
   await page.goto("/");
   // Unauthenticated visitors are bounced to the login screen.
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();

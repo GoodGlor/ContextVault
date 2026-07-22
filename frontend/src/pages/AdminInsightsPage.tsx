@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { listAllRepositories, type AdminRepository } from "../api/repositories";
 import { listKnowledgeGaps, type KnowledgeGap } from "../api/knowledgeGaps";
@@ -12,6 +13,7 @@ function errorMessage(err: unknown, fallback: string): string {
 
 /** The curation cockpit: knowledge gaps → Admin Notes → usage analytics (card #40). */
 export function AdminInsightsPage(): ReactNode {
+  const { t } = useTranslation();
   const [repos, setRepos] = useState<AdminRepository[] | null>(null);
   const [reposError, setReposError] = useState<string | null>(null);
 
@@ -21,19 +23,19 @@ export function AdminInsightsPage(): ReactNode {
       .then((rs) => !cancelled && setRepos(rs))
       .catch(
         (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, "Failed to load repositories.")),
+          !cancelled && setReposError(errorMessage(err, t("insights.errorLoadRepositories"))),
       );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   if (reposError !== null) return <p className="error">{reposError}</p>;
-  if (repos === null) return <p>Loading…</p>;
+  if (repos === null) return <p>{t("insights.loading")}</p>;
 
   return (
     <div className="admin-insights">
-      <h1>Insights</h1>
+      <h1>{t("insights.title")}</h1>
       <KnowledgeGapsPanel repos={repos} />
       <AnalyticsPanel />
     </div>
@@ -42,6 +44,7 @@ export function AdminInsightsPage(): ReactNode {
 
 /** Ranked knowledge gaps for a repo, each answerable inline with an Admin Note. */
 function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState(repos[0]?.id ?? "");
   const [gaps, setGaps] = useState<KnowledgeGap[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +58,13 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
     setAnswered(null);
     listKnowledgeGaps(selected)
       .then((g) => !cancelled && setGaps(g))
-      .catch((err: unknown) => !cancelled && setError(errorMessage(err, "Failed to load gaps.")));
+      .catch(
+        (err: unknown) => !cancelled && setError(errorMessage(err, t("insights.errorLoadGaps"))),
+      );
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [selected, t]);
 
   const onAnswered = (question: string) => {
     // The gap closes once the note is ingested; drop it from the to-do list now.
@@ -68,9 +73,9 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
   };
 
   return (
-    <section aria-label="Knowledge gaps">
-      <h2>Knowledge gaps</h2>
-      <label htmlFor="gap-repo">Repository</label>
+    <section aria-label={t("insights.knowledgeGapsAriaLabel")}>
+      <h2>{t("insights.knowledgeGaps")}</h2>
+      <label htmlFor="gap-repo">{t("insights.repository")}</label>
       <select id="gap-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
         {repos.map((r) => (
           <option key={r.id} value={r.id}>
@@ -80,16 +85,14 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
       </select>
 
       {answered !== null && (
-        <p className="success">
-          Admin Note saved for “{answered}”. It will close the gap once ingested.
-        </p>
+        <p className="success">{t("insights.noteSaved", { question: answered })}</p>
       )}
       {error !== null && <p className="error">{error}</p>}
 
       {gaps === null ? (
-        <p>Loading gaps…</p>
+        <p>{t("insights.loadingGaps")}</p>
       ) : gaps.length === 0 ? (
-        <p>No knowledge gaps — every asked question was answerable. 🎉</p>
+        <p>{t("insights.noGaps")}</p>
       ) : (
         <ul className="gap-list">
           {gaps.map((gap) => (
@@ -115,6 +118,7 @@ function GapRow({
   repositoryId: string;
   onAnswered: () => void;
 }): ReactNode {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
@@ -129,7 +133,7 @@ function GapRow({
       await createAdminNote(repositoryId, { title: gap.question, content: content.trim() });
       onAnswered();
     } catch (err) {
-      setError(errorMessage(err, "Could not save the Admin Note."));
+      setError(errorMessage(err, t("insights.errorSaveNote")));
       setSaving(false);
     }
   };
@@ -142,21 +146,24 @@ function GapRow({
     <li className="gap-item">
       <span className="gap-question">{gap.question}</span>
       <span className="gap-signal">
-        asked {gap.ask_count}× by {gap.user_count} {gap.user_count === 1 ? "user" : "users"} · last{" "}
-        {lastAsked}
+        {t("insights.gapSignal", {
+          askCount: gap.ask_count,
+          count: gap.user_count,
+          lastAsked,
+        })}
       </span>
       {!editing ? (
         <button type="button" onClick={() => setEditing(true)}>
-          Answer this gap
+          {t("insights.answerGap")}
         </button>
       ) : (
         <form className="note-editor" onSubmit={onSave}>
-          <label htmlFor={titleId}>Note title</label>
+          <label htmlFor={titleId}>{t("insights.noteTitle")}</label>
           <input id={titleId} value={gap.question} readOnly />
-          <label htmlFor={answerId}>Answer</label>
+          <label htmlFor={answerId}>{t("insights.answer")}</label>
           <textarea id={answerId} value={content} onChange={(e) => setContent(e.target.value)} />
           <button type="submit" disabled={saving || content.trim() === ""}>
-            Save Admin Note
+            {t("insights.saveNote")}
           </button>
           {error !== null && <p className="error">{error}</p>}
         </form>
@@ -167,6 +174,7 @@ function GapRow({
 
 /** Read-only usage dashboard over GET /analytics. */
 function AnalyticsPanel(): ReactNode {
+  const { t } = useTranslation();
   const [data, setData] = useState<AnalyticsOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -175,39 +183,43 @@ function AnalyticsPanel(): ReactNode {
     getAnalytics()
       .then((d) => !cancelled && setData(d))
       .catch(
-        (err: unknown) => !cancelled && setError(errorMessage(err, "Failed to load analytics.")),
+        (err: unknown) =>
+          !cancelled && setError(errorMessage(err, t("insights.errorLoadAnalytics"))),
       );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   return (
-    <section aria-label="Analytics">
-      <h2>Analytics</h2>
+    <section aria-label={t("insights.analyticsAriaLabel")}>
+      <h2>{t("insights.analytics")}</h2>
       {error !== null ? (
         <p className="error">{error}</p>
       ) : data === null ? (
-        <p>Loading analytics…</p>
+        <p>{t("insights.loadingAnalytics")}</p>
       ) : (
         <>
           <div className="stat-row">
-            <Stat label="Total queries" value={data.total_queries} />
-            <Stat label="Answered" value={data.answered} />
-            <Stat label="Not in vault" value={data.not_in_vault} />
-            <Stat label="Gap rate" value={`${Math.round(data.not_in_vault_rate * 100)}%`} />
+            <Stat label={t("insights.totalQueries")} value={data.total_queries} />
+            <Stat label={t("insights.answered")} value={data.answered} />
+            <Stat label={t("insights.notInVault")} value={data.not_in_vault} />
+            <Stat
+              label={t("insights.gapRate")}
+              value={`${Math.round(data.not_in_vault_rate * 100)}%`}
+            />
           </div>
 
-          <h3>Per repository</h3>
+          <h3>{t("insights.perRepository")}</h3>
           {data.per_repository.length === 0 ? (
-            <p>No queries yet.</p>
+            <p>{t("insights.noQueries")}</p>
           ) : (
             <table className="analytics-table">
               <thead>
                 <tr>
-                  <th>Repository</th>
-                  <th>Queries</th>
-                  <th>Gaps</th>
+                  <th>{t("insights.colRepository")}</th>
+                  <th>{t("insights.colQueries")}</th>
+                  <th>{t("insights.colGaps")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -222,7 +234,7 @@ function AnalyticsPanel(): ReactNode {
             </table>
           )}
 
-          <h3>Top questions</h3>
+          <h3>{t("insights.topQuestions")}</h3>
           <ul className="top-questions">
             {data.top_questions.map((q) => (
               <li key={q.question}>
@@ -232,21 +244,27 @@ function AnalyticsPanel(): ReactNode {
             ))}
           </ul>
 
-          <h3>Most active users</h3>
+          <h3>{t("insights.mostActiveUsers")}</h3>
           <ul className="active-users">
             {data.active_users.map((u) => (
               <li key={u.user_id}>
                 <span className="u-name">{u.username}</span>
-                <span className="u-count">{u.query_count} queries</span>
+                <span className="u-count">
+                  {t("insights.userQueryCount", { count: u.query_count })}
+                </span>
               </li>
             ))}
           </ul>
 
-          <h3>By day</h3>
+          <h3>{t("insights.byDay")}</h3>
           <ul className="by-day">
             {data.by_day.map((d) => (
               <li key={d.day}>
-                {d.day}: {d.total} total, {d.not_in_vault} gaps
+                {t("insights.byDayRow", {
+                  day: d.day,
+                  total: d.total,
+                  gaps: d.not_in_vault,
+                })}
               </li>
             ))}
           </ul>

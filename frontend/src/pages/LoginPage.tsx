@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 
 interface FromState {
   from?: { pathname: string };
@@ -13,6 +15,7 @@ export function LoginPage(): ReactNode {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +34,7 @@ export function LoginPage(): ReactNode {
       const dest = (location.state as FromState | null)?.from?.pathname ?? "/";
       navigate(dest, { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     } finally {
       setBusy(false);
     }
@@ -39,10 +42,13 @@ export function LoginPage(): ReactNode {
 
   return (
     <div className="auth-card">
-      <h1>Sign in</h1>
+      <div className="auth-lang">
+        <LanguageSwitcher />
+      </div>
+      <h1>{t("login.title")}</h1>
       <form onSubmit={onSubmit}>
         <label>
-          Username
+          {t("login.username")}
           <input
             name="username"
             autoComplete="username"
@@ -52,7 +58,7 @@ export function LoginPage(): ReactNode {
           />
         </label>
         <label>
-          Password
+          {t("login.password")}
           <input
             name="password"
             type="password"
@@ -68,11 +74,11 @@ export function LoginPage(): ReactNode {
           </p>
         )}
         <button type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? t("login.signingIn") : t("login.signIn")}
         </button>
       </form>
       <p className="form-hint">
-        Have an invite? <Link to="/accept-invite">Activate your account</Link>
+        {t("login.haveInvite")} <Link to="/accept-invite">{t("login.activate")}</Link>
       </p>
     </div>
   );

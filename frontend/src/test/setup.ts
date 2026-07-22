@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import i18n from "../i18n";
 
 // Node 25 exposes a non-functional experimental `localStorage` global that shadows
 // jsdom's, so we install a small in-memory Storage the app can actually read/write.
@@ -34,6 +35,12 @@ for (const target of [globalThis, window]) {
     writable: true,
   });
 }
+
+// The app defaults to Ukrainian; the existing suite asserts on English strings, so
+// pin the test locale to English before each test (kept in sync via i18n keys).
+beforeEach(() => {
+  void i18n.changeLanguage("en");
+});
 
 // Unmount React trees and reset storage between tests so no state leaks across them.
 afterEach(() => {

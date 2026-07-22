@@ -75,7 +75,7 @@ describe("AdminSourcesPage", () => {
     mock({ sources: [source({ id: "s-1", title: "policy.pdf", status: "done" })] });
     render(<AdminSourcesPage />);
     expect(await screen.findByText("policy.pdf")).toBeInTheDocument();
-    expect(screen.getByText("done")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
   });
 
   it("uploads a document and shows it in the list", async () => {
@@ -97,7 +97,7 @@ describe("AdminSourcesPage", () => {
     expect((posted?.[1]?.body as FormData).get("file")).toBeInstanceOf(File);
     // The newly uploaded source appears (pending).
     expect(await screen.findByText("handbook.pdf")).toBeInTheDocument();
-    expect(screen.getByText("pending")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
   });
 
   it("deletes a source", async () => {
@@ -127,13 +127,13 @@ describe("AdminSourcesPage", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(screen.getByText("processing")).toBeInTheDocument();
+      expect(screen.getByText("Processing")).toBeInTheDocument();
 
       // The poll fires and the status advances to done.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(SOURCE_POLL_MS);
       });
-      expect(screen.getByText("done")).toBeInTheDocument();
+      expect(screen.getByText("Completed")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -144,7 +144,7 @@ describe("AdminSourcesPage", () => {
       sources: [source({ id: "s-1", title: "broken.pdf", status: "failed", ingest_error: "boom" })],
     });
     render(<AdminSourcesPage />);
-    expect(await screen.findByText("failed")).toBeInTheDocument();
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
     expect(screen.getByText(/boom/)).toBeInTheDocument();
   });
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import {
   createRepository,
@@ -21,6 +22,7 @@ function errorMessage(err: unknown, fallback: string): string {
 
 /** Admin surface for repositories: create them and configure each one's LLM. */
 export function AdminRepositoriesPage(): ReactNode {
+  const { t } = useTranslation();
   const [repos, setRepos] = useState<AdminRepository[] | null>(null);
   const [reposError, setReposError] = useState<string | null>(null);
 
@@ -35,12 +37,13 @@ export function AdminRepositoriesPage(): ReactNode {
       .then((rs) => !cancelled && setRepos(rs))
       .catch(
         (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, "Failed to load repositories.")),
+          !cancelled &&
+          setReposError(errorMessage(err, t("repositories.failedToLoad"))),
       );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   const onCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -57,7 +60,7 @@ export function AdminRepositoriesPage(): ReactNode {
       setName("");
       setDescription("");
     } catch (err) {
-      setCreateError(errorMessage(err, "Could not create the repository."));
+      setCreateError(errorMessage(err, t("repositories.couldNotCreate")));
     } finally {
       setCreating(false);
     }
@@ -72,31 +75,31 @@ export function AdminRepositoriesPage(): ReactNode {
     return <p className="error">{reposError}</p>;
   }
   if (repos === null) {
-    return <p>Loading repositories…</p>;
+    return <p>{t("repositories.loadingRepositories")}</p>;
   }
 
   return (
     <section className="admin-repos">
-      <h1>Repositories</h1>
+      <h1>{t("repositories.title")}</h1>
 
       <form className="repo-create" onSubmit={onCreate}>
-        <h2>New repository</h2>
-        <label htmlFor="repo-name">Repository name</label>
+        <h2>{t("repositories.newRepository")}</h2>
+        <label htmlFor="repo-name">{t("repositories.repositoryName")}</label>
         <input id="repo-name" value={name} onChange={(e) => setName(e.target.value)} required />
-        <label htmlFor="repo-description">Description</label>
+        <label htmlFor="repo-description">{t("repositories.description")}</label>
         <input
           id="repo-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
         <button type="submit" disabled={creating || name.trim() === ""}>
-          Create repository
+          {t("repositories.createRepository")}
         </button>
         {createError !== null && <p className="error">{createError}</p>}
       </form>
 
       {repos.length === 0 ? (
-        <p>No repositories yet. Create one above to get started.</p>
+        <p>{t("repositories.emptyState")}</p>
       ) : (
         <ul className="repo-list">
           {repos.map((repo) => (
@@ -123,6 +126,7 @@ function RepoItem({
   onChanged: (updated: AdminRepository) => void;
   onDeleted: () => void;
 }): ReactNode {
+  const { t } = useTranslation();
   const [configuring, setConfiguring] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(repo.name);
@@ -146,7 +150,7 @@ function RepoItem({
       onChanged(updated);
       setRenaming(false);
     } catch (err) {
-      setError(errorMessage(err, "Could not update the repository."));
+      setError(errorMessage(err, t("repositories.couldNotUpdate")));
     } finally {
       setSaving(false);
     }
@@ -160,7 +164,7 @@ function RepoItem({
       await deleteRepository(repo.id, confirmName);
       onDeleted();
     } catch (err) {
-      setError(errorMessage(err, "Could not delete the repository."));
+      setError(errorMessage(err, t("repositories.couldNotDelete")));
       setDeleting(false);
     }
   };
@@ -171,21 +175,21 @@ function RepoItem({
         <span className="repo-name">{repo.name}</span>
         {repo.description !== null && <span className="repo-description">{repo.description}</span>}
         <span className={repo.configured ? "badge configured" : "badge unconfigured"}>
-          {repo.configured ? "Configured" : "Not configured"}
+          {repo.configured ? t("repositories.configured") : t("repositories.notConfigured")}
         </span>
         <button type="button" onClick={() => setConfiguring((v) => !v)}>
-          Configure
+          {t("repositories.configure")}
         </button>
         <button type="button" onClick={() => setRenaming((v) => !v)}>
-          Rename
+          {t("repositories.rename")}
         </button>
         {!confirmingDelete ? (
           <button type="button" onClick={() => setConfirmingDelete(true)}>
-            Delete
+            {t("repositories.delete")}
           </button>
         ) : (
           <span className="confirm-delete">
-            <label htmlFor={`repo-confirm-${repo.id}`}>Confirm name</label>
+            <label htmlFor={`repo-confirm-${repo.id}`}>{t("repositories.confirmName")}</label>
             <input
               id={`repo-confirm-${repo.id}`}
               value={confirmName}
@@ -196,7 +200,7 @@ function RepoItem({
               onClick={onDelete}
               disabled={deleting || confirmName !== repo.name}
             >
-              Confirm delete
+              {t("repositories.confirmDelete")}
             </button>
           </span>
         )}
@@ -204,20 +208,20 @@ function RepoItem({
 
       {renaming && (
         <form className="repo-rename" onSubmit={onRename}>
-          <label htmlFor={`repo-name-${repo.id}`}>Name</label>
+          <label htmlFor={`repo-name-${repo.id}`}>{t("repositories.name")}</label>
           <input
             id={`repo-name-${repo.id}`}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <label htmlFor={`repo-desc-${repo.id}`}>Description</label>
+          <label htmlFor={`repo-desc-${repo.id}`}>{t("repositories.description")}</label>
           <input
             id={`repo-desc-${repo.id}`}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
           <button type="submit" disabled={saving || name.trim() === ""}>
-            Save
+            {t("repositories.save")}
           </button>
         </form>
       )}
@@ -242,6 +246,7 @@ function RepoConfigPanel({
   repository: AdminRepository;
   onConfigured: () => void;
 }): ReactNode {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<LLMConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -266,12 +271,13 @@ function RepoConfigPanel({
       })
       .catch(
         (err: unknown) =>
-          !cancelled && setLoadError(errorMessage(err, "Failed to load configuration.")),
+          !cancelled &&
+          setLoadError(errorMessage(err, t("repositories.failedToLoadConfig"))),
       );
     return () => {
       cancelled = true;
     };
-  }, [repository.id]);
+  }, [repository.id, t]);
 
   const onLoadModels = async () => {
     setLoadingModels(true);
@@ -284,10 +290,10 @@ function RepoConfigPanel({
       });
       setModels(result.models);
       if (result.models.length === 0) {
-        setModelsError("The provider returned no models.");
+        setModelsError(t("repositories.noModels"));
       }
     } catch (err) {
-      setModelsError(errorMessage(err, "Could not load models."));
+      setModelsError(errorMessage(err, t("repositories.couldNotLoadModels")));
     } finally {
       setLoadingModels(false);
     }
@@ -310,7 +316,7 @@ function RepoConfigPanel({
       setSaved(true);
       onConfigured();
     } catch (err) {
-      setSaveError(errorMessage(err, "Could not save the configuration."));
+      setSaveError(errorMessage(err, t("repositories.couldNotSave")));
     } finally {
       setSaving(false);
     }
@@ -320,7 +326,7 @@ function RepoConfigPanel({
     return <p className="error">{loadError}</p>;
   }
   if (config === null) {
-    return <p>Loading configuration…</p>;
+    return <p>{t("repositories.loadingConfiguration")}</p>;
   }
 
   const keyId = `key-${repository.id}`;
@@ -331,9 +337,11 @@ function RepoConfigPanel({
   return (
     <form className="repo-config" onSubmit={onSave}>
       {config.api_key_masked !== null && (
-        <p className="current-key">Current key: {config.api_key_masked}</p>
+        <p className="current-key">
+          {t("repositories.currentKey", { value: config.api_key_masked })}
+        </p>
       )}
-      <label htmlFor={providerId}>Provider</label>
+      <label htmlFor={providerId}>{t("repositories.provider")}</label>
       <select
         id={providerId}
         value={provider}
@@ -351,7 +359,7 @@ function RepoConfigPanel({
         ))}
       </select>
 
-      <label htmlFor={modelId}>Model</label>
+      <label htmlFor={modelId}>{t("repositories.model")}</label>
       <input
         id={modelId}
         list={modelListId}
@@ -365,24 +373,24 @@ function RepoConfigPanel({
         ))}
       </datalist>
       <button type="button" onClick={onLoadModels} disabled={loadingModels}>
-        {loadingModels ? "Loading models…" : "Load models"}
+        {loadingModels ? t("repositories.loadingModels") : t("repositories.loadModels")}
       </button>
       {modelsError !== null && <p className="error">{modelsError}</p>}
 
-      <label htmlFor={keyId}>API key</label>
+      <label htmlFor={keyId}>{t("repositories.apiKey")}</label>
       <input
         id={keyId}
         type="password"
         value={apiKey}
         onChange={(e) => setApiKey(e.target.value)}
-        placeholder={config.configured ? "Enter a new key to replace the current one" : ""}
+        placeholder={config.configured ? t("repositories.keyPlaceholder") : ""}
         required
       />
 
       <button type="submit" disabled={saving || model.trim() === "" || apiKey === ""}>
-        Save configuration
+        {t("repositories.saveConfiguration")}
       </button>
-      {saved && <p className="success">Configuration saved.</p>}
+      {saved && <p className="success">{t("repositories.configurationSaved")}</p>}
       {saveError !== null && <p className="error">{saveError}</p>}
     </form>
   );

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { QueryResult } from "../api/query";
 import { AnswerText } from "./AnswerText";
 import { SourceList } from "./SourceList";
@@ -17,6 +18,7 @@ export function QueryTurn({
   result: QueryResult;
   repositoryId: string;
 }): ReactNode {
+  const { t } = useTranslation();
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const refs = useRef(new Map<string, HTMLLIElement>());
 
@@ -36,7 +38,7 @@ export function QueryTurn({
       <p className="turn-question">{question}</p>
       {result.not_in_vault && (
         <p className="not-in-vault" role="status">
-          Not in this vault — no grounded answer was found for this question.
+          {t("queryTurn.notInVault")}
         </p>
       )}
       <AnswerText text={result.answer} citations={result.citations} onCite={onCite} />

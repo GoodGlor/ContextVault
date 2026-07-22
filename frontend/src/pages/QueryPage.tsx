@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { listRepositories, type Repository } from "../api/repositories";
 import { queryRepository, type QueryResult } from "../api/query";
@@ -14,6 +15,7 @@ interface Turn {
 
 /** The core user experience: pick a granted repo, ask, get a cited answer. */
 export function QueryPage(): ReactNode {
+  const { t } = useTranslation();
   const [repos, setRepos] = useState<Repository[] | null>(null);
   const [reposError, setReposError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
@@ -33,12 +35,12 @@ export function QueryPage(): ReactNode {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setReposError(err instanceof ApiError ? err.detail : "Failed to load repositories.");
+        setReposError(err instanceof ApiError ? err.detail : t("query.failedRepos"));
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   const onAsk = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,7 +57,7 @@ export function QueryPage(): ReactNode {
       ]);
       setQuestion("");
     } catch (err) {
-      setAskError(err instanceof ApiError ? err.detail : "Something went wrong. Try again.");
+      setAskError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     } finally {
       setAsking(false);
     }
@@ -74,7 +76,7 @@ export function QueryPage(): ReactNode {
   if (repos === null) {
     return (
       <div className="page">
-        <p>Loading your repositories…</p>
+        <p>{t("query.loadingRepos")}</p>
       </div>
     );
   }
@@ -82,15 +84,15 @@ export function QueryPage(): ReactNode {
   if (repos.length === 0) {
     return (
       <div className="page">
-        <h1>Ask a repository</h1>
-        <p>You don’t have access to any repositories yet. Ask an admin for a grant.</p>
+        <h1>{t("query.title")}</h1>
+        <p>{t("query.noAccess")}</p>
       </div>
     );
   }
 
   return (
     <div className="page query-page">
-      <h1>Ask a repository</h1>
+      <h1>{t("query.title")}</h1>
 
       <div className="conversation">
         {turns.map((turn) => (
@@ -105,9 +107,9 @@ export function QueryPage(): ReactNode {
 
       <form className="ask-form" onSubmit={onAsk}>
         <label>
-          Repository
+          {t("query.repository")}
           <select
-            aria-label="Repository"
+            aria-label={t("query.repository")}
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
           >
@@ -119,13 +121,13 @@ export function QueryPage(): ReactNode {
           </select>
         </label>
         <label>
-          Question
+          {t("query.question")}
           <textarea
-            aria-label="Question"
+            aria-label={t("query.question")}
             rows={3}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask anything grounded in this repository…"
+            placeholder={t("query.questionPlaceholder")}
             required
           />
         </label>
@@ -135,7 +137,7 @@ export function QueryPage(): ReactNode {
           </p>
         )}
         <button type="submit" disabled={asking}>
-          {asking ? "Asking…" : "Ask"}
+          {asking ? t("query.asking") : t("query.ask")}
         </button>
       </form>
     </div>
