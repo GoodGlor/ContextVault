@@ -43,9 +43,7 @@ def test_fetch_size_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("contextvault.services.web_source._MAX_BYTES", 8)
     transport = httpx.MockTransport(
-        lambda req: httpx.Response(
-            200, headers={"content-type": "text/html"}, text="x" * 100
-        )
+        lambda req: httpx.Response(200, headers={"content-type": "text/html"}, text="x" * 100)
     )
     with pytest.raises(WebFetchError, match="size cap"):
         fetch_html("http://example.com/", transport=transport)
