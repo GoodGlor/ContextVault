@@ -1,15 +1,16 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import type { Citation, SourceReference } from "../api/query";
 import { getSourceContent } from "../api/sources";
 
-/** Format the citation character spans that point at a given source. */
+/** Format the citation character spans that point at a given source (raw, unlabeled). */
 function spansFor(sourceId: string, citations: Citation[]): string {
   const spans = citations
     .filter((c) => c.source_id === sourceId && c.char_start !== null && c.char_end !== null)
     .map((c) => `${c.char_start}–${c.char_end}`);
-  return spans.length ? `chars ${spans.join(", ")}` : "";
+  return spans.join(", ");
 }
 
 /** Map each source to the citation numbers that reference it, in ascending order. */
@@ -39,10 +40,11 @@ export function SourceList({
   registerRef: (id: string, el: HTMLLIElement | null) => void;
   repositoryId: string;
 }): ReactNode {
+  const { t } = useTranslation();
   if (sources.length === 0) return null;
   return (
     <div className="sources">
-      <h3>Sources</h3>
+      <h3>{t("sourceList.sources")}</h3>
       <ul>
         {sources.map((source) => (
           <SourceItem
@@ -72,6 +74,7 @@ function SourceItem({
   registerRef: (id: string, el: HTMLLIElement | null) => void;
   repositoryId: string;
 }): ReactNode {
+  const { t } = useTranslation();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,13 +85,15 @@ function SourceItem({
     setError(null);
     try {
       const result = await getSourceContent(repositoryId, source.id);
-      setContent(result.content ?? "(this source has no stored text)");
+      setContent(result.content ?? t("sourceList.noStoredText"));
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Could not load the passage.");
+      setError(err instanceof ApiError ? err.detail : t("sourceList.couldNotLoad"));
     } finally {
       setLoading(false);
     }
   };
+
+  const spans = spansFor(source.id, citations);
 
   return (
     <li
@@ -106,15 +111,15 @@ function SourceItem({
       <span className="source-body">
         <span className="source-title">
           {source.title}
-          {source.verified && <span className="verified-badge">Verified</span>}
+          {source.verified && <span className="verified-badge">{t("sourceList.verified")}</span>}
         </span>
         <span className="source-meta">
-          {source.author ? `by ${source.author} · ` : ""}
+          {source.author ? `${t("sourceList.by", { author: source.author })} · ` : ""}
           {source.original_filename ?? source.kind}
-          {spansFor(source.id, citations) ? ` · ${spansFor(source.id, citations)}` : ""}
+          {spans ? ` · ${t("sourceList.chars", { spans })}` : ""}
         </span>
         <button type="button" className="view-passage" onClick={onView} disabled={loading}>
-          {loading ? "Loading…" : "View passage"}
+          {loading ? t("common.loading") : t("sourceList.viewPassage")}
         </button>
         {content !== null && <p className="source-passage">{content}</p>}
         {error !== null && <p className="error">{error}</p>}

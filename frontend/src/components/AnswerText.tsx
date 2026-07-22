@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { Citation } from "../api/query";
 import { parseAnswer } from "../query/parseAnswer";
 
@@ -16,6 +17,7 @@ export function AnswerText({
   citations: Citation[];
   onCite: (sourceId: string) => void;
 }): ReactNode {
+  const { t } = useTranslation();
   const bySource = new Map(citations.map((c) => [c.number, c.source_id]));
   const known = new Set(citations.map((c) => c.number));
   const segments = parseAnswer(text, known);
@@ -30,7 +32,7 @@ export function AnswerText({
             key={i}
             type="button"
             className="citation-chip"
-            aria-label={`Jump to source ${seg.number}`}
+            aria-label={t("answerText.jumpToSource", { number: seg.number })}
             onClick={() => {
               const sourceId = bySource.get(seg.number);
               if (sourceId !== undefined) onCite(sourceId);

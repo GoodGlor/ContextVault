@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { listAllRepositories, type AdminRepository } from "../api/repositories";
 import {
@@ -20,6 +21,7 @@ function errorMessage(err: unknown, fallback: string): string {
 
 /** Admin surface for a repository's sources: upload, watch ingestion, delete. */
 export function AdminSourcesPage(): ReactNode {
+  const { t } = useTranslation();
   const [repos, setRepos] = useState<AdminRepository[] | null>(null);
   const [reposError, setReposError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
@@ -47,12 +49,12 @@ export function AdminSourcesPage(): ReactNode {
       })
       .catch(
         (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, "Failed to load repositories.")),
+          !cancelled && setReposError(errorMessage(err, t("adminSources.errorLoadRepos"))),
       );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   // (Re)load sources whenever the selected repository changes.
   useEffect(() => {
@@ -64,12 +66,12 @@ export function AdminSourcesPage(): ReactNode {
       .then((s) => !cancelled && setSources(s))
       .catch(
         (err: unknown) =>
-          !cancelled && setSourcesError(errorMessage(err, "Failed to load sources.")),
+          !cancelled && setSourcesError(errorMessage(err, t("adminSources.errorLoadSources"))),
       );
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [selected, t]);
 
   // Poll while anything is still ingesting; re-runs (rescheduling) each time the
   // list changes, and stops once every source has reached a terminal state.
@@ -101,7 +103,7 @@ export function AdminSourcesPage(): ReactNode {
       setFile(null);
       if (fileInput.current) fileInput.current.value = "";
     } catch (err) {
-      setUploadError(errorMessage(err, "Upload failed."));
+      setUploadError(errorMessage(err, t("adminSources.errorUpload")));
     } finally {
       setUploading(false);
     }
@@ -117,7 +119,7 @@ export function AdminSourcesPage(): ReactNode {
       setSources((prev) => [...(prev ?? []), created]);
       setWebUrl("");
     } catch (err) {
-      setWebError(errorMessage(err, "Could not add the link."));
+      setWebError(errorMessage(err, t("adminSources.errorAddLink")));
     } finally {
       setAddingWeb(false);
     }
@@ -128,7 +130,7 @@ export function AdminSourcesPage(): ReactNode {
       await deleteSource(id);
       setSources((prev) => prev?.filter((s) => s.id !== id) ?? prev);
     } catch (err) {
-      setSourcesError(errorMessage(err, "Could not delete the source."));
+      setSourcesError(errorMessage(err, t("adminSources.errorDelete")));
     }
   };
 
@@ -136,17 +138,24 @@ export function AdminSourcesPage(): ReactNode {
     return <p className="error">{reposError}</p>;
   }
   if (repos === null) {
-    return <p>Loading repositories…</p>;
+    return <p>{t("adminSources.loadingRepos")}</p>;
   }
   if (repos.length === 0) {
-    return <p>No repositories yet. Create one under Repositories first.</p>;
+    return <p>{t("adminSources.noRepos")}</p>;
   }
+
+  const statusLabels: Record<Source["status"], string> = {
+    pending: t("adminSources.statusPending"),
+    processing: t("adminSources.statusProcessing"),
+    done: t("adminSources.statusDone"),
+    failed: t("adminSources.statusFailed"),
+  };
 
   return (
     <section className="admin-sources">
-      <h1>Sources</h1>
+      <h1>{t("adminSources.title")}</h1>
 
-      <label htmlFor="source-repo">Repository</label>
+      <label htmlFor="source-repo">{t("adminSources.repositoryLabel")}</label>
       <select id="source-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
         {repos.map((r) => (
           <option key={r.id} value={r.id}>
@@ -156,7 +165,7 @@ export function AdminSourcesPage(): ReactNode {
       </select>
 
       <form className="source-upload" onSubmit={onUpload}>
-        <label htmlFor="source-file">Document</label>
+        <label htmlFor="source-file">{t("adminSources.documentLabel")}</label>
         <input
           id="source-file"
           type="file"
@@ -164,35 +173,33 @@ export function AdminSourcesPage(): ReactNode {
           onChange={onFileChange}
           accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.tiff,.bmp,.heic,.heif"
         />
-        <p className="form-hint">
-          Images are read with OCR — only text visible in the image is captured.
-        </p>
+        <p className="form-hint">{t("adminSources.ocrHint")}</p>
         <button type="submit" disabled={uploading || file === null}>
-          Upload
+          {t("adminSources.uploadButton")}
         </button>
         {uploadError !== null && <p className="error">{uploadError}</p>}
       </form>
 
       <form className="source-web" onSubmit={onAddWeb}>
-        <label htmlFor="source-url">Web link</label>
+        <label htmlFor="source-url">{t("adminSources.webLinkLabel")}</label>
         <input
           id="source-url"
           type="url"
-          placeholder="https://example.com/article"
+          placeholder={t("adminSources.urlPlaceholder")}
           value={webUrl}
           onChange={(e) => setWebUrl(e.target.value)}
         />
         <button type="submit" disabled={addingWeb || webUrl.trim() === ""}>
-          Add link
+          {t("adminSources.addLinkButton")}
         </button>
         {webError !== null && <p className="error">{webError}</p>}
       </form>
 
       {sourcesError !== null && <p className="error">{sourcesError}</p>}
       {sources === null ? (
-        <p>Loading sources…</p>
+        <p>{t("adminSources.loadingSources")}</p>
       ) : sources.length === 0 ? (
-        <p>No sources yet. Upload a document to get started.</p>
+        <p>{t("adminSources.noSources")}</p>
       ) : (
         <ul className="source-list">
           {sources.map((s) => (
@@ -205,12 +212,12 @@ export function AdminSourcesPage(): ReactNode {
               ) : (
                 <span className="source-title">{s.title}</span>
               )}
-              <span className={`badge status-${s.status}`}>{s.status}</span>
+              <span className={`badge status-${s.status}`}>{statusLabels[s.status]}</span>
               {s.status === "failed" && s.ingest_error !== null && (
                 <span className="source-error">{s.ingest_error}</span>
               )}
               <button type="button" onClick={() => onDelete(s.id)}>
-                Delete
+                {t("adminSources.deleteButton")}
               </button>
             </li>
           ))}

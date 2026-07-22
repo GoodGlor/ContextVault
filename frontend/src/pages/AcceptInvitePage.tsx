@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 
 /**
  * Redeem an invite: choose a password and get signed in. The token is prefilled
@@ -11,6 +13,7 @@ import { ApiError } from "../api/client";
 export function AcceptInvitePage(): ReactNode {
   const { acceptInvite } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const [token, setToken] = useState(params.get("token") ?? "");
   const [password, setPassword] = useState("");
@@ -21,7 +24,7 @@ export function AcceptInvitePage(): ReactNode {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("acceptInvite.mismatch"));
       return;
     }
     setError(null);
@@ -30,7 +33,7 @@ export function AcceptInvitePage(): ReactNode {
       await acceptInvite(token.trim(), password);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     } finally {
       setBusy(false);
     }
@@ -38,15 +41,18 @@ export function AcceptInvitePage(): ReactNode {
 
   return (
     <div className="auth-card">
-      <h1>Accept your invite</h1>
-      <p className="form-hint">Choose a password to activate your account.</p>
+      <div className="auth-lang">
+        <LanguageSwitcher />
+      </div>
+      <h1>{t("acceptInvite.title")}</h1>
+      <p className="form-hint">{t("acceptInvite.chooseHint")}</p>
       <form onSubmit={onSubmit}>
         <label>
-          Invite token
+          {t("acceptInvite.inviteToken")}
           <input name="token" value={token} onChange={(e) => setToken(e.target.value)} required />
         </label>
         <label>
-          Password
+          {t("acceptInvite.password")}
           <input
             name="password"
             type="password"
@@ -58,7 +64,7 @@ export function AcceptInvitePage(): ReactNode {
           />
         </label>
         <label>
-          Confirm password
+          {t("acceptInvite.confirmPassword")}
           <input
             name="confirm"
             type="password"
@@ -75,11 +81,11 @@ export function AcceptInvitePage(): ReactNode {
           </p>
         )}
         <button type="submit" disabled={busy}>
-          {busy ? "Activating…" : "Activate account"}
+          {busy ? t("acceptInvite.activating") : t("acceptInvite.activateAccount")}
         </button>
       </form>
       <p className="form-hint">
-        Already have an account? <Link to="/login">Sign in</Link>
+        {t("acceptInvite.haveAccount")} <Link to="/login">{t("acceptInvite.signIn")}</Link>
       </p>
     </div>
   );

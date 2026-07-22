@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 
 /**
  * Set a new password. Reached either voluntarily or via the forced-change bounce
@@ -11,6 +13,7 @@ import { ApiError } from "../api/client";
 export function ChangePasswordPage(): ReactNode {
   const { session, changePassword } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -22,7 +25,7 @@ export function ChangePasswordPage(): ReactNode {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("changePassword.mismatch"));
       return;
     }
     setError(null);
@@ -31,7 +34,7 @@ export function ChangePasswordPage(): ReactNode {
       await changePassword(currentPassword, newPassword);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     } finally {
       setBusy(false);
     }
@@ -39,15 +42,18 @@ export function ChangePasswordPage(): ReactNode {
 
   return (
     <div className="auth-card">
-      <h1>Change password</h1>
+      <div className="auth-lang">
+        <LanguageSwitcher />
+      </div>
+      <h1>{t("changePassword.title")}</h1>
       {forced && (
         <p className="form-notice" role="status">
-          You must set a new password before continuing.
+          {t("changePassword.forcedNotice")}
         </p>
       )}
       <form onSubmit={onSubmit}>
         <label>
-          Current password
+          {t("changePassword.currentPassword")}
           <input
             name="current_password"
             type="password"
@@ -58,7 +64,7 @@ export function ChangePasswordPage(): ReactNode {
           />
         </label>
         <label>
-          New password
+          {t("changePassword.newPassword")}
           <input
             name="new_password"
             type="password"
@@ -70,7 +76,7 @@ export function ChangePasswordPage(): ReactNode {
           />
         </label>
         <label>
-          Confirm new password
+          {t("changePassword.confirmNewPassword")}
           <input
             name="confirm"
             type="password"
@@ -87,7 +93,7 @@ export function ChangePasswordPage(): ReactNode {
           </p>
         )}
         <button type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save password"}
+          {busy ? t("changePassword.saving") : t("changePassword.savePassword")}
         </button>
       </form>
     </div>

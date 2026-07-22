@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-22 (model dropdown)
+- **Last updated:** 2026-07-22 (i18n EN/UK)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -9,16 +9,15 @@
 ## TL;DR
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
-backend, React/Vite SPA), feature-complete. Working through a **three-feature user
-request**, one PR each: **A** — HEIC/HEIF image support (`#101`); **B** — dynamic LLM
-model dropdown (`#102`), **shipped this session**; **C** — EN/UK i18n (Ukrainian default),
-**still queued/not started**.
+backend, React/Vite SPA), feature-complete. The **three-feature user request is now fully
+shipped**, one PR each: **A** — HEIC/HEIF image support (`#101`); **B** — dynamic LLM
+model dropdown (`#102`); **C** — EN/UK i18n (`#103`), **shipped this session**.
 
-**Feature B (`#102`):** after an admin enters a provider API key, a **"Load models"**
-button fetches that provider's live model list (OpenAI / Anthropic / Google / OpenRouter)
-and the Model field becomes a `<datalist>` dropdown you can still type into. Backend:
-`llm/models.py` (`list_models`) + `POST /repositories/{id}/llm-models`. Spec:
-`docs/superpowers/specs/2026-07-22-model-dropdown-design.md`.
+**Feature C (`#103`):** the whole SPA is bilingual (English + Ukrainian) via
+**react-i18next**, with **Ukrainian as the default** and a language switcher in the header
+and on the auth cards. All ~150 user-facing strings extracted to `src/i18n/locales/{en,uk}.json`;
+choice persists in `localStorage` (`contextvault.locale`). Spec:
+`docs/superpowers/specs/2026-07-22-i18n-uk-design.md`. **No backend changes.**
 
 Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher — safe as-is
 (admin-only), but get a `/security-review` before any non-admin exposure. See *Next up*.
@@ -30,18 +29,43 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | Model dropdown (`#102`), squash-merged this session; before it `#101` (HEIC) |
-| Last merged PR | **`#102`** — dynamic model dropdown; before it #101 (HEIC), #100 (image/web) |
+| `main` HEAD | i18n EN/UK (`#103`), squash-merged this session; before it `#102`, `#101` |
+| Last merged PR | **`#103`** — EN/UK i18n; before it #102 (model dropdown), #101 (HEIC) |
 | In flight | none |
 
-**Clean state.** Working tree clean; `main` even with `origin/main`. The model-dropdown
-PR was **squash-merged**. **Prunable local branches:** `feat/model-dropdown` (merged),
-`feat/heic-image-support`, `feat/image-web-sources`, and the old
+**Clean state.** Working tree clean; `main` even with `origin/main`. The i18n PR was
+**squash-merged**. **Prunable local branches:** `feat/i18n-uk` (merged),
+`feat/model-dropdown`, `feat/heic-image-support`, `feat/image-web-sources`, and the old
 `feat/1-project-scaffolding` (all safe to `git branch -D`).
 
 ---
 
 ## Done recently (this session)
+
+### i18n — English ⇄ Ukrainian, Ukrainian default — `#103`, squash-merged
+
+The whole SPA is bilingual via **react-i18next**; **Ukrainian is the default**, English
+is switchable. **Frontend only — no backend changes.**
+
+- **Setup:** `src/i18n/index.ts` (init, `localStorage` persist under
+  `contextvault.locale`, default `uk`, fallback `en`); `main.tsx` imports it once. Deps
+  `i18next` + `react-i18next` added.
+- **Catalog:** all ~150 user-facing strings → `src/i18n/locales/en.json` + `uk.json`,
+  grouped by namespace (`common`, `layout`, `nav`, `login`, `changePassword`,
+  `acceptInvite`, `query`, `queryTurn`, `sourceList`, `answerText`, and one per admin
+  page). Pluralized counts use i18next `_one/_other` (EN) and `_one/_few/_many/_other`
+  (UK). The four admin-page translations were done by parallel subagents against a shared
+  glossary, then merged.
+- **Switcher:** `components/LanguageSwitcher.tsx` (Українська / English) in the header
+  (`Layout`) and on each auth card (login / change-password / accept-invite).
+- **Not translated:** dynamic data, API error *detail* strings, CSS classes, ids, the
+  upload `accept` attribute. Status **CSS classes** keep the raw enum (`status-failed`);
+  only the label is translated.
+- **Tests:** `src/test/setup.ts` pins the unit-test locale to English so the existing
+  ~150 English-string assertions keep passing; `LanguageSwitcher.test.tsx` verifies the
+  flip to Ukrainian. e2e specs `addInitScript` to force English; a throwaway check
+  confirmed the default-Ukrainian login renders ("Увійти"). Frontend 59 vitest, eslint
+  (max-warnings=0) + tsc clean; both e2e specs green on the live stack (alt ports).
 
 ### Dynamic LLM model dropdown — `#102`, squash-merged
 
@@ -141,13 +165,10 @@ gotcha under *Working rules*.
 
 ## Next up
 
-**One user-requested feature remains queued (not carded), the last of the three
-(A #101, B #102 both shipped):**
-
-- **C — i18n (English ⇄ Ukrainian, Ukrainian default).** App-wide frontend change: a
-  translation framework (e.g. react-i18next), extract all UI strings, a language switch,
-  persisted preference, **default = Ukrainian**. Broad (touches most components); its own
-  brainstorm/spec cycle. This is the next thing to build.
+**The three-feature request (A #101, B #102, C #103) is fully shipped. No feature work is
+queued.** New i18n keys should be added to *both* `src/i18n/locales/en.json` and `uk.json`
+(en/uk key sets must match, except UK's extra `_few`/`_many` plural forms); any new
+user-facing string must go through `t()`, or it will render only in English.
 
 The concrete follow-up surfaced by the #100 code review:
 
