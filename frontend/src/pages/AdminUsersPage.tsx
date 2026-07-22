@@ -63,6 +63,7 @@ function InviteForm(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invite, setInvite] = useState<Invitation | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -73,11 +74,26 @@ function InviteForm(): ReactNode {
     try {
       const inv = await createInvitation({ username: trimmed, role });
       setInvite(inv);
+      setCopied(false);
       setUsername("");
     } catch (err) {
       setError(errorMessage(err, t("users.createInviteError")));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // The full link a recipient can paste into their browser.
+  const inviteUrl =
+    invite !== null ? `${window.location.origin}/accept-invite?token=${invite.token}` : "";
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (permissions/insecure context) — leave the link visible to copy manually.
     }
   };
 
@@ -104,7 +120,11 @@ function InviteForm(): ReactNode {
       {invite !== null && (
         <p className="invite-link">
           {t("users.inviteLinkPrefix")} <strong>{invite.username}</strong>:{" "}
-          <code>/accept-invite?token={invite.token}</code> {t("users.inviteLinkNote")}
+          <code>{inviteUrl}</code>{" "}
+          <button type="button" className="copy-invite" onClick={onCopy}>
+            {copied ? t("users.copiedLink") : t("users.copyLink")}
+          </button>{" "}
+          {t("users.inviteLinkNote")}
         </p>
       )}
     </section>

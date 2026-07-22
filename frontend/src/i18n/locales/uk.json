@@ -171,7 +171,9 @@
     "noGrantsYet": "Ще немає доступів.",
     "noExpiry": "без терміну дії",
     "until": "до {{date}}",
-    "revoke": "Відкликати"
+    "revoke": "Відкликати",
+    "copyLink": "Копіювати",
+    "copiedLink": "Скопійовано"
   },
   "repositories": {
     "failedToLoad": "Не вдалося завантажити репозиторії.",

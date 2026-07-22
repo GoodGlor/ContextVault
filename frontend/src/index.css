@@ -677,6 +677,10 @@ label + select {
   border: 1px solid rgba(91, 140, 255, 0.3);
   font-size: 0.88rem;
 }
+.copy-invite {
+  font-size: 0.78rem;
+  padding: 0.1rem 0.5rem;
+}
 code {
   font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.85em;

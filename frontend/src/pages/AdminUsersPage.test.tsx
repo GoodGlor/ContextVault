@@ -106,6 +106,30 @@ describe("AdminUsersPage", () => {
     expect(await screen.findByText(/invite-tok-xyz/)).toBeInTheDocument();
   });
 
+  it("copies the invite link to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    mock();
+    render(<AdminUsersPage />);
+    const invite = await screen.findByRole("region", { name: "Invite a user" });
+
+    await userEvent.type(within(invite).getByLabelText("Username"), "newbie");
+    await userEvent.click(within(invite).getByRole("button", { name: "Send invite" }));
+    await screen.findByText(/invite-tok-xyz/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    // The full accept-invite URL (origin + path + token) is written to the clipboard.
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("/accept-invite?token=invite-tok-xyz"),
+    );
+    // The button flips to a "Copied" confirmation.
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+  });
+
   it("resets a user's password and shows the temporary password once", async () => {
     mock();
     render(<AdminUsersPage />);

@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-22 (i18n EN/UK)
+- **Last updated:** 2026-07-22 (copy invite-link)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -29,18 +29,29 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | i18n EN/UK (`#103`), squash-merged this session; before it `#102`, `#101` |
-| Last merged PR | **`#103`** — EN/UK i18n; before it #102 (model dropdown), #101 (HEIC) |
+| `main` HEAD | Copy invite-link (`#104`), squash-merged this session; before it `#103`, `#102` |
+| Last merged PR | **`#104`** — copy invite-link button; before it #103 (i18n), #102 (dropdown) |
 | In flight | none |
 
-**Clean state.** Working tree clean; `main` even with `origin/main`. The i18n PR was
-**squash-merged**. **Prunable local branches:** `feat/i18n-uk` (merged),
-`feat/model-dropdown`, `feat/heic-image-support`, `feat/image-web-sources`, and the old
-`feat/1-project-scaffolding` (all safe to `git branch -D`).
+**Clean state.** Working tree clean; `main` even with `origin/main`. The invite-copy PR
+was **squash-merged**. **Prunable local branches:** `feat/copy-invite-link` (merged),
+`feat/i18n-uk`, `feat/model-dropdown`, `feat/heic-image-support`, `feat/image-web-sources`,
+and the old `feat/1-project-scaffolding` (all safe to `git branch -D`).
 
 ---
 
 ## Done recently (this session)
+
+### Copy invite-link button — `#104`, squash-merged
+
+Small UX add on the admin Users page. After creating an invite, a **Copy** button writes
+the full accept-invite URL (`{origin}/accept-invite?token=…`) to the clipboard and flips
+to **Copied** for 2s. The displayed `<code>` now shows that absolute URL too (was a
+relative path). Clipboard failures (insecure context / denied permission) are swallowed —
+the link stays visible to copy by hand. New i18n keys `users.copyLink` / `users.copiedLink`
+(EN + UK). Frontend only. Tests: `AdminUsersPage.test.tsx` (mocked clipboard → asserts the
+URL written + the Copied flip); e2e `admin.spec.ts` extended (create invite → Copy →
+Copied, clipboard holds the URL, with `clipboard-*` permissions granted).
 
 ### i18n — English ⇄ Ukrainian, Ukrainian default — `#103`, squash-merged
 
