@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 /** The app chrome for authenticated screens: a header bar + routed content. */
@@ -20,10 +20,10 @@ export function Layout(): ReactNode {
         </Link>
         {session?.role === "admin" && (
           <nav className="app-nav">
-            <Link to="/admin/repositories">Repositories</Link>
-            <Link to="/admin/sources">Sources</Link>
-            <Link to="/admin/users">Users</Link>
-            <Link to="/admin/insights">Insights</Link>
+            <NavLink to="/admin/repositories">Repositories</NavLink>
+            <NavLink to="/admin/sources">Sources</NavLink>
+            <NavLink to="/admin/users">Users</NavLink>
+            <NavLink to="/admin/insights">Insights</NavLink>
           </nav>
         )}
         {session && (
