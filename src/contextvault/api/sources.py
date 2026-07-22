@@ -32,6 +32,10 @@ router = APIRouter(tags=["sources"])
 # presenting their body as a plain-text document (the filename is not persisted).
 _ADMIN_NOTE_FILENAME = "admin-note.txt"
 
+# Extensions routed to the image parser (card: image ingestion) rather than the
+# document pipeline; matched case-insensitively against the upload's filename.
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"}
+
 
 class SourceResponse(BaseModel):
     """A source with its ingestion state, for the admin UI."""
@@ -69,9 +73,11 @@ async def upload_source(
 
     data = await file.read()
     filename = file.filename or "untitled"
+    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    kind = SourceKind.IMAGE if suffix in _IMAGE_SUFFIXES else SourceKind.DOCUMENT
     source = Source(
         repository_id=repository_id,
-        kind=SourceKind.DOCUMENT,
+        kind=kind,
         title=filename,
         original_filename=filename,
         status=SourceStatus.PENDING,

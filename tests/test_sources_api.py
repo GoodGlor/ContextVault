@@ -154,6 +154,34 @@ async def test_upload_records_failure_for_unsupported_type(
     assert body["ingest_error"]
 
 
+async def test_image_upload_sets_image_kind(db_session: AsyncSession, client: AsyncClient) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/sources",
+        files={"file": ("diagram.png", b"\x89PNG\r\n", "image/png")},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "image"
+
+
+async def test_document_upload_sets_document_kind(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/sources",
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "document"
+
+
 async def test_upload_unknown_repository_404(db_session: AsyncSession, client: AsyncClient) -> None:
     import uuid
 
