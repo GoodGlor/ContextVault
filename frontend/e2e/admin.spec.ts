@@ -56,6 +56,21 @@ test("admin signs in, navigates the admin nav, and creates a repository", async 
   // Close the panel again so it doesn't interfere with later assertions.
   await row.getByRole("button", { name: "Configure" }).click();
 
+  // Users page: create an invite and copy its link. Grant clipboard so the copy
+  // succeeds, then assert the button confirms with "Copied".
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("link", { name: "Users" }).click();
+  await expect(page.getByRole("heading", { name: "Invite a user" })).toBeVisible();
+  const invite = page.getByRole("region", { name: "Invite a user" });
+  await invite.getByLabel("Username").fill(`e2e-invitee-${Date.now()}`);
+  await invite.getByRole("button", { name: "Send invite" }).click();
+  await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
+  await page.getByRole("button", { name: "Copy" }).click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+  // The clipboard holds the full accept-invite URL.
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip).toContain("/accept-invite?token=");
+
   // The other admin surfaces are reachable and render.
   await page.getByRole("link", { name: "Insights" }).click();
   await expect(page.getByRole("heading", { name: "Insights" })).toBeVisible();

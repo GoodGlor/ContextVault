@@ -167,7 +167,9 @@
     "noGrantsYet": "No grants yet.",
     "noExpiry": "no expiry",
     "until": "until {{date}}",
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "copyLink": "Copy",
+    "copiedLink": "Copied"
   },
   "repositories": {
     "failedToLoad": "Failed to load repositories.",
