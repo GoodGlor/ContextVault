@@ -9,7 +9,9 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        // Defaults to the standard dev backend; override (e.g. to run on an
+        // alternate port alongside another project) with VITE_PROXY_TARGET.
+        target: process.env.VITE_PROXY_TARGET ?? "http://localhost:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

@@ -156,6 +156,14 @@ describe("AdminSourcesPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("accepts HEIC/HEIF images in the file picker", async () => {
+    mock({ sources: [] });
+    render(<AdminSourcesPage />);
+    const input = (await screen.findByLabelText(/document/i)) as HTMLInputElement;
+    expect(input.accept).toContain(".heic");
+    expect(input.accept).toContain(".heif");
+  });
+
   it("submits a web link and appends the created source", async () => {
     mock({
       sources: [],

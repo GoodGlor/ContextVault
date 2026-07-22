@@ -167,6 +167,19 @@ async def test_image_upload_sets_image_kind(db_session: AsyncSession, client: As
     assert resp.json()["kind"] == "image"
 
 
+async def test_heic_upload_sets_image_kind(db_session: AsyncSession, client: AsyncClient) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/sources",
+        files={"file": ("photo.heic", b"\x00\x00\x00\x18ftypheic", "image/heic")},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["kind"] == "image"
+
+
 async def test_document_upload_sets_document_kind(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
