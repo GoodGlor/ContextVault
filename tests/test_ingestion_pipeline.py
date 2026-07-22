@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.core.config import get_settings
 from contextvault.models import Chunk, Repository, Source, SourceKind, SourceStatus
-from contextvault.services.ingestion import ingest_source, run_ingestion
+from contextvault.services.ingestion import ingest_source, run_ingestion, run_web_ingestion
 
 
 class FakeEmbedder:
@@ -185,3 +185,64 @@ async def test_run_ingestion_delegates_to_pipeline(db_session: AsyncSession) -> 
     assert refreshed is not None
     assert refreshed.status is SourceStatus.DONE
     assert len(await _chunks_for(db_session, source)) == 1
+
+
+async def test_run_web_ingestion_stores_extracted_text(db_session, monkeypatch) -> None:
+    repo = Repository(name="Vault")
+    db_session.add(repo)
+    await db_session.flush()
+    source = Source(
+        repository_id=repo.id, kind=SourceKind.WEB, title="https://x.test",
+        source_url="https://x.test",
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "contextvault.services.ingestion.fetch_html", lambda url: "<html/>"
+    )
+    monkeypatch.setattr(
+        "contextvault.services.ingestion.extract_web_text",
+        lambda html: ("Extracted body text.", "Nice Title"),
+    )
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await run_web_ingestion(
+        source.id, url="https://x.test", embedder=embedder,
+        session_factory=_fixed_factory(db_session),
+    )
+
+    refreshed = await db_session.get(Source, source.id)
+    assert refreshed.status is SourceStatus.DONE
+    assert refreshed.title == "Nice Title"
+    assert refreshed.content == "Extracted body text."
+    count = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(Chunk).where(Chunk.source_id == source.id)
+    )
+    assert count >= 1
+
+
+async def test_run_web_ingestion_empty_text_fails(db_session, monkeypatch) -> None:
+    repo = Repository(name="Vault2")
+    db_session.add(repo)
+    await db_session.flush()
+    source = Source(
+        repository_id=repo.id, kind=SourceKind.WEB, title="https://y.test",
+        source_url="https://y.test",
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    monkeypatch.setattr("contextvault.services.ingestion.fetch_html", lambda url: "<html/>")
+    monkeypatch.setattr(
+        "contextvault.services.ingestion.extract_web_text", lambda html: ("   ", None)
+    )
+
+    await run_web_ingestion(
+        source.id, url="https://y.test", embedder=FakeEmbedder(get_settings().embedding_dim),
+        session_factory=_fixed_factory(db_session),
+    )
+
+    refreshed = await db_session.get(Source, source.id)
+    assert refreshed.status is SourceStatus.FAILED
+    assert "No readable text" in (refreshed.ingest_error or "")
