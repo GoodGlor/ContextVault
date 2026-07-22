@@ -82,3 +82,17 @@ export function setLlmConfig(
 ): Promise<LLMConfig> {
   return api.put<LLMConfig>(`/repositories/${repositoryId}/llm-config`, input);
 }
+
+// Mirrors ListModelsResponse in src/contextvault/api/repositories.py.
+export interface ModelList {
+  models: string[];
+}
+
+/** Fetch a provider's available models for the model dropdown (admin-only). Sends the
+ *  just-entered `api_key` when present; omit it to use the repo's stored key. */
+export function listModels(
+  repositoryId: string,
+  input: { provider: LLMProvider; api_key?: string },
+): Promise<ModelList> {
+  return api.post<ModelList>(`/repositories/${repositoryId}/llm-models`, input);
+}

@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-22 (HEIC support)
+- **Last updated:** 2026-07-22 (model dropdown)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -9,16 +9,16 @@
 ## TL;DR
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
-backend, React/Vite SPA), feature-complete. The prior session shipped **image (OCR) &
-web-link sources** (PR #100, `2934091`). **This session added `.heic`/`.heif` (iPhone)
-image support** — a small extension of the image pipeline: `pillow-heif` decodes HEIC
-into a PIL image, then the existing OCR → chunk → embed → cite path runs unchanged.
-Spec: `docs/superpowers/specs/2026-07-22-heic-image-support-design.md`.
+backend, React/Vite SPA), feature-complete. Working through a **three-feature user
+request**, one PR each: **A** — HEIC/HEIF image support (`#101`); **B** — dynamic LLM
+model dropdown (`#102`), **shipped this session**; **C** — EN/UK i18n (Ukrainian default),
+**still queued/not started**.
 
-This HEIC work is **feature A of a three-feature user request**; **B and C are queued,
-not started** (see *Next up*): **B** — dynamic LLM model dropdown (enter provider API
-key → fetch that provider's available models → select; providers: OpenAI, Anthropic,
-Google); **C** — EN/UK i18n with **Ukrainian as default**. Each gets its own spec cycle.
+**Feature B (`#102`):** after an admin enters a provider API key, a **"Load models"**
+button fetches that provider's live model list (OpenAI / Anthropic / Google / OpenRouter)
+and the Model field becomes a `<datalist>` dropdown you can still type into. Backend:
+`llm/models.py` (`list_models`) + `POST /repositories/{id}/llm-models`. Spec:
+`docs/superpowers/specs/2026-07-22-model-dropdown-design.md`.
 
 Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher — safe as-is
 (admin-only), but get a `/security-review` before any non-admin exposure. See *Next up*.
@@ -30,18 +30,46 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | HEIC support (`#101`), squash-merged this session; before it `2934091` (#100) |
-| Last merged PR | **`#101`** — HEIC/HEIF image support; before it #100 (image/web sources) |
+| `main` HEAD | Model dropdown (`#102`), squash-merged this session; before it `#101` (HEIC) |
+| Last merged PR | **`#102`** — dynamic model dropdown; before it #101 (HEIC), #100 (image/web) |
 | In flight | none |
 
-**Clean state.** Working tree clean; `main` even with `origin/main`. The HEIC PR was
-**squash-merged**. **Prunable local branches:** `feat/heic-image-support` (merged),
-`feat/image-web-sources`, and the old `feat/1-project-scaffolding` (all safe to
-`git branch -D`).
+**Clean state.** Working tree clean; `main` even with `origin/main`. The model-dropdown
+PR was **squash-merged**. **Prunable local branches:** `feat/model-dropdown` (merged),
+`feat/heic-image-support`, `feat/image-web-sources`, and the old
+`feat/1-project-scaffolding` (all safe to `git branch -D`).
 
 ---
 
 ## Done recently (this session)
+
+### Dynamic LLM model dropdown — `#102`, squash-merged
+
+After an admin enters a provider API key and clicks **"Load models"**, the app fetches
+that provider's live model catalogue and turns the Model field into a dropdown you can
+still type into (the "dropdown + manual fallback" the user chose).
+
+- **`llm/models.py` (new):** `async list_models(provider, api_key, base_url=None)` calls
+  each SDK's list endpoint — Anthropic/OpenAI `client.models.list()`, Gemini
+  `client.aio.models.list()`, OpenRouter via the OpenAI client + `base_url`. Light
+  chat-model filtering: OpenAI kept to `gpt-*`/`o<n>`/`chatgpt-*`; Gemini kept to
+  `generateContent` models; Anthropic/OpenRouter returned as-is. Any failure → typed
+  `ModelListError`.
+- **Endpoint:** `POST /repositories/{id}/llm-models` (admin-only), body
+  `{provider, api_key?}`. Uses the entered key, else the repo's **stored** encrypted key
+  (so a configured repo reloads without re-sending the masked secret); no key → 400;
+  `ModelListError` → 400; unknown repo → 404.
+- **Frontend (`RepoConfigPanel`):** "Load models" button + a `<datalist>`-backed Model
+  `<input>`; provider change clears the stale list; loading/error states inline. New
+  `listModels` client fn.
+- **Trigger/field/providers** were user decisions: explicit button; dropdown + manual
+  fallback; all four providers.
+- **Tests:** backend 334 passed / 1 skipped — `tests/test_llm_models.py` (per-provider
+  listing + filtering, mocked SDK clients) and `tests/test_repositories_api.py`
+  (entered-key vs stored-key, no-key 400, provider-error 400, 403, 404). Frontend 58
+  vitest (Load-models populates the datalist; failure shows an error). **e2e**
+  `admin.spec.ts` extended: "Load models" with a bad key surfaces a clean error
+  end-to-end. Ran live on alt ports 8001/5174. All CI checks pass.
 
 ### HEIC/HEIF image support — `#101`, squash-merged
 
@@ -113,19 +141,13 @@ gotcha under *Working rules*.
 
 ## Next up
 
-**Two user-requested features are queued (not carded), to be done one at a time via the
-superpowers spec→plan→TDD flow:**
+**One user-requested feature remains queued (not carded), the last of the three
+(A #101, B #102 both shipped):**
 
-- **B — Dynamic LLM model dropdown.** After an admin enters a provider API key, fetch that
-  provider's list of available models and let them pick one from a dropdown (rather than a
-  free-text/hardcoded model id). **Providers to support: OpenAI, Anthropic, Google
-  (Gemini)** — all three SDKs are already deps. Touches LLM/provider config (where keys are
-  stored encrypted), a new per-provider "list models" call, and the admin config UI. The
-  user referenced the target select element `id="model-b9228a20-3fea-4900-86fa-2d609ea22aa7"`
-  — locate the current model-config UI first. Needs its own brainstorm/spec.
 - **C — i18n (English ⇄ Ukrainian, Ukrainian default).** App-wide frontend change: a
-  translation framework, extract all UI strings, a language switch, persisted preference,
-  **default = Ukrainian**. Broad (touches most components); its own spec.
+  translation framework (e.g. react-i18next), extract all UI strings, a language switch,
+  persisted preference, **default = Ukrainian**. Broad (touches most components); its own
+  brainstorm/spec cycle. This is the next thing to build.
 
 The concrete follow-up surfaced by the #100 code review:
 

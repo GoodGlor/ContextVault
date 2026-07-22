@@ -43,11 +43,19 @@ describe("AdminRepositoriesPage", () => {
     repos?: AdminRepository[];
     configs?: Record<string, LLMConfig>;
     created?: AdminRepository;
+    models?: string[];
+    modelsStatus?: number;
   }) {
     const repos = opts.repos ?? REPOS;
     const configs = opts.configs ?? {};
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
+      if (/\/repositories\/([^/]+)\/llm-models$/.test(url) && method === "POST") {
+        if (opts.modelsStatus && opts.modelsStatus >= 400) {
+          return Promise.resolve(json({ detail: "Could not list models: invalid key" }, opts.modelsStatus));
+        }
+        return Promise.resolve(json({ models: opts.models ?? [] }));
+      }
       const m = /\/repositories\/([^/]+)\/llm-config$/.exec(url);
       if (m) {
         if (method === "PUT") {
@@ -129,6 +137,44 @@ describe("AdminRepositoriesPage", () => {
     });
     // Success feedback after saving.
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+  });
+
+  it("loads models into the dropdown and sends the entered provider/key", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, models: ["claude-opus-4-8", "claude-sonnet-5"] });
+    render(<AdminRepositoriesPage />);
+    const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
+
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "anthropic");
+    await userEvent.type(screen.getByLabelText("API key"), "sk-ant-secret123");
+    await userEvent.click(screen.getByRole("button", { name: "Load models" }));
+
+    // POSTed to the list-models endpoint with the entered provider + key.
+    const post = fetchMock.mock.calls.find(
+      (c) => (c[1]?.method ?? "GET") === "POST" && String(c[0]).includes("/llm-models"),
+    );
+    expect(String(post?.[0])).toContain("/repositories/r-2/llm-models");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      provider: "anthropic",
+      api_key: "sk-ant-secret123",
+    });
+    // The datalist backing the Model input is populated with the returned models.
+    const model = (await screen.findByLabelText("Model")) as HTMLInputElement;
+    const options = document.getElementById(model.getAttribute("list") ?? "") as HTMLElement;
+    expect(options.querySelector('option[value="claude-opus-4-8"]')).not.toBeNull();
+    expect(options.querySelector('option[value="claude-sonnet-5"]')).not.toBeNull();
+  });
+
+  it("surfaces an error when loading models fails", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, modelsStatus: 400 });
+    render(<AdminRepositoriesPage />);
+    const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
+
+    await userEvent.type(screen.getByLabelText("API key"), "bad-key");
+    await userEvent.click(screen.getByRole("button", { name: "Load models" }));
+
+    expect(await screen.findByText(/could not list models/i)).toBeInTheDocument();
   });
 
   it("shows the masked key for an already-configured repository", async () => {
