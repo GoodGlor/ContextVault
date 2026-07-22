@@ -11,6 +11,7 @@ from contextvault.ingestion.parsing import (
     TextBlock,
     UnsupportedDocumentError,
     parse_document,
+    parsed_from_text,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "UnsupportedDocumentError",
     "chunk_document",
     "parse_document",
+    "parsed_from_text",
 ]

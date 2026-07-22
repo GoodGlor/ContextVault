@@ -60,6 +60,11 @@ def _blocks_from_segments(segments: list[tuple[str, int | None]]) -> ParsedDocum
     return ParsedDocument(text="".join(b.text for b in blocks), blocks=tuple(blocks))
 
 
+def parsed_from_text(text: str) -> ParsedDocument:
+    """Wrap ready-made text (e.g. an extracted web page) as a single page-less block."""
+    return _blocks_from_segments([(text, None)])
+
+
 def _parse_txt(data: bytes) -> ParsedDocument:
     try:
         text = data.decode("utf-8")
@@ -96,10 +101,33 @@ def _parse_pdf(data: bytes) -> ParsedDocument:
     return _blocks_from_segments(segments)
 
 
+def _parse_image(data: bytes) -> ParsedDocument:
+    from PIL import Image, UnidentifiedImageError
+
+    from contextvault.ingestion.ocr import ocr_image
+
+    try:
+        image = Image.open(BytesIO(data))
+        image.load()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise DocumentParseError("Could not read image file.") from exc
+
+    text = ocr_image(image)
+    if not text.strip():
+        raise DocumentParseError("No text found in image.")
+    return _blocks_from_segments([(text, None)])
+
+
 _PARSERS = {
     ".txt": _parse_txt,
     ".docx": _parse_docx,
     ".pdf": _parse_pdf,
+    ".png": _parse_image,
+    ".jpg": _parse_image,
+    ".jpeg": _parse_image,
+    ".webp": _parse_image,
+    ".tiff": _parse_image,
+    ".bmp": _parse_image,
 }
 
 
