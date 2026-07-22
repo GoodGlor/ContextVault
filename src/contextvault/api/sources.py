@@ -123,7 +123,7 @@ async def add_web_source(
     source = Source(
         repository_id=repository_id,
         kind=SourceKind.WEB,
-        title=url,
+        title=url[:512],
         source_url=url,
         status=SourceStatus.PENDING,
     )

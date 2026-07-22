@@ -1,8 +1,9 @@
 import { api } from "./client";
+import type { SourceKind } from "./sources";
 
 // Mirrors the query schemas in src/contextvault/api/query.py.
 
-export type SourceKind = "document" | "admin_note";
+export type { SourceKind };
 
 export interface Citation {
   number: number;

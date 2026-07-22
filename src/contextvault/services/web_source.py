@@ -51,7 +51,9 @@ def _validate_url(url: str) -> None:
 def fetch_html(url: str, *, transport: httpx.BaseTransport | None = None) -> str:
     """Fetch ``url`` and return its decoded HTML, enforcing all guards."""
     current = url
-    with httpx.Client(timeout=_TIMEOUT, follow_redirects=False, transport=transport) as client:
+    with httpx.Client(
+        timeout=_TIMEOUT, follow_redirects=False, transport=transport, trust_env=False
+    ) as client:
         for _ in range(_MAX_HOPS + 1):
             _validate_url(current)
             request = client.build_request("GET", current)

@@ -280,6 +280,24 @@ async def test_add_web_source_creates_web_source(
     assert body["status"] == "pending"
 
 
+async def test_add_web_source_clamps_long_title(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+    long_url = "https://example.com/" + "a" * 600
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/web-sources",
+        json={"url": long_url},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert len(body["title"]) <= 512
+    assert body["source_url"] == long_url
+
+
 async def test_add_web_source_rejects_bad_url(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
