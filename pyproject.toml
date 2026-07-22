@@ -25,6 +25,7 @@ dependencies = [
     "openai>=1.0",
     "rapidocr-onnxruntime>=1.4.4",
     "pillow>=12.3.0",
+    "trafilatura>=2.1.0",
 ]
 
 [dependency-groups]
