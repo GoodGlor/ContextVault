@@ -52,7 +52,9 @@ describe("AdminRepositoriesPage", () => {
       const method = init?.method ?? "GET";
       if (/\/repositories\/([^/]+)\/llm-models$/.test(url) && method === "POST") {
         if (opts.modelsStatus && opts.modelsStatus >= 400) {
-          return Promise.resolve(json({ detail: "Could not list models: invalid key" }, opts.modelsStatus));
+          return Promise.resolve(
+            json({ detail: "Could not list models: invalid key" }, opts.modelsStatus),
+          );
         }
         return Promise.resolve(json({ models: opts.models ?? [] }));
       }
@@ -158,11 +160,15 @@ describe("AdminRepositoriesPage", () => {
       provider: "anthropic",
       api_key: "sk-ant-secret123",
     });
-    // The datalist backing the Model input is populated with the returned models.
-    const model = (await screen.findByLabelText("Model")) as HTMLInputElement;
-    const options = document.getElementById(model.getAttribute("list") ?? "") as HTMLElement;
-    expect(options.querySelector('option[value="claude-opus-4-8"]')).not.toBeNull();
-    expect(options.querySelector('option[value="claude-sonnet-5"]')).not.toBeNull();
+    // A visible dropdown of the returned models appears, plus a "Loaded N models" confirmation.
+    const dropdown = (await screen.findByLabelText("Choose a loaded model")) as HTMLSelectElement;
+    expect(within(dropdown).getByRole("option", { name: "claude-opus-4-8" })).toBeInTheDocument();
+    expect(within(dropdown).getByRole("option", { name: "claude-sonnet-5" })).toBeInTheDocument();
+    expect(screen.getByText(/loaded 2 models/i)).toBeInTheDocument();
+
+    // Picking a model from the dropdown fills the Model input.
+    await userEvent.selectOptions(dropdown, "claude-sonnet-5");
+    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("claude-sonnet-5");
   });
 
   it("surfaces an error when loading models fails", async () => {

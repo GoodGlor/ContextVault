@@ -59,22 +59,19 @@ class Settings(BaseSettings):
 
     # Generation (RAG loop). ``llm_provider`` selects the system-default LLM
     # provider the RAG loop generates with (design spec §4/§7); full per-repo
-    # routing across providers is a later card. Each provider authenticates with
-    # its own key (falling back to the SDK's own env resolution when unset) and
-    # exposes a configurable model. ``llm_max_tokens`` caps the generated answer
-    # length.
+    # routing across providers is a later card. Each repository supplies its own
+    # provider API key (encrypted at rest — see ``models/repository.py``); there
+    # is no process-wide provider-key fallback, so no ``*_api_key`` settings. The
+    # ``*_model`` values are only default model ids used when a repo omits one.
+    # ``llm_max_tokens`` caps the generated answer length.
     llm_provider: str = "gemini"
-    gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
-    anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-4-8"
-    openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
     # OpenRouter is OpenAI-compatible: the same wire format reached through its
     # gateway. Model ids are vendor-namespaced (e.g. ``openai/gpt-4o``,
     # ``anthropic/claude-3.5-sonnet``); ``openrouter_base_url`` is the OpenAI
     # SDK's ``base_url`` override that points the client at the gateway.
-    openrouter_api_key: str | None = None
     openrouter_model: str = "openai/gpt-4o"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     llm_max_tokens: int = 2048

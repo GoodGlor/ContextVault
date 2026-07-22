@@ -40,13 +40,13 @@ class OpenRouterLLMProvider(OpenAILLMProvider):
 
         ``client`` injects an ``AsyncOpenAI`` (mainly for tests); otherwise one is
         built pointing at ``base_url`` (falling back to ``openrouter_base_url``) and
-        authenticated with ``api_key`` (falling back to the ``openrouter_api_key``
-        setting). ``model`` and ``max_tokens`` default to the ``openrouter_model`` /
-        ``llm_max_tokens`` settings.
+        authenticated with the per-repository ``api_key`` (each repository carries its
+        own encrypted key — there is no process-wide key fallback). ``model`` and
+        ``max_tokens`` default to the ``openrouter_model`` / ``llm_max_tokens`` settings.
         """
         settings = get_settings()
         resolved_client = client or AsyncOpenAI(
-            api_key=api_key or settings.openrouter_api_key,
+            api_key=api_key,
             base_url=base_url or settings.openrouter_base_url,
         )
         super().__init__(
