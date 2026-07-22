@@ -25,10 +25,12 @@ class LLMProviderName(enum.StrEnum):
 
 
 class SourceKind(enum.StrEnum):
-    """Kind of ingested source: an uploaded document or an admin-authored note."""
+    """Kind of ingested source: a document, an admin note, an image, or a web page."""
 
     DOCUMENT = "document"
     ADMIN_NOTE = "admin_note"
+    IMAGE = "image"
+    WEB = "web"
 
 
 class SourceStatus(enum.StrEnum):

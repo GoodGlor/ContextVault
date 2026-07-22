@@ -12,7 +12,7 @@ from pgvector.sqlalchemy import Vector
 import contextvault.models  # noqa: F401
 from contextvault.core.config import get_settings
 from contextvault.db.base import Base
-from contextvault.models import LLMProviderName, Repository
+from contextvault.models import LLMProviderName, Repository, SourceKind
 
 
 def _table(name: str) -> sa.Table:
@@ -88,10 +88,22 @@ def test_sources_belong_to_repository_and_have_kind() -> None:
     sources = _table("sources")
     kind_type = sources.c.kind.type
     assert isinstance(kind_type, sa.Enum)
-    assert set(kind_type.enums) == {"document", "admin_note"}
+    assert set(kind_type.enums) == {"document", "admin_note", "image", "web"}
     repo_fk = [fk for fk in sources.c.repository_id.foreign_keys]
     assert repo_fk and repo_fk[0].column.table.name == "repositories"
     assert repo_fk[0].ondelete == "CASCADE"
+
+
+def test_source_kinds_include_image_and_web() -> None:
+    assert SourceKind.IMAGE == "image"
+    assert SourceKind.WEB == "web"
+
+
+def test_source_has_optional_source_url() -> None:
+    from contextvault.models import Source
+
+    src = Source(repository_id=None, kind=SourceKind.WEB, title="t", source_url="https://x.test")
+    assert src.source_url == "https://x.test"
 
 
 def test_chunks_carry_vector_and_denormalized_repository() -> None:

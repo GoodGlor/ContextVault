@@ -43,6 +43,7 @@ class SourceResponse(BaseModel):
     kind: SourceKind
     title: str
     original_filename: str | None
+    source_url: str | None
     status: SourceStatus
     ingest_error: str | None
     created_at: datetime
