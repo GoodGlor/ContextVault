@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-22 (copy invite-link)
+- **Last updated:** 2026-07-22 (model-picker UX + green CI + env-key cleanup)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -19,6 +19,14 @@ and on the auth cards. All ~150 user-facing strings extracted to `src/i18n/local
 choice persists in `localStorage` (`contextvault.locale`). Spec:
 `docs/superpowers/specs/2026-07-22-i18n-uk-design.md`. **No backend changes.**
 
+**Follow-up fix (this session):** the model dropdown loaded models into an invisible
+`<datalist>` — a successful fetch looked like "nothing happened" (reported against Gemini;
+the backend was always correct — verified live: 56 models, 41 with `generateContent`). Now
+a real `<select>` dropdown + a "Loaded N models" confirmation. Same PR: **CI is green again**
+(was red since #101 — prettier on 3 files, plus a masked `process`/`vite.config.ts` typecheck
+error → added `@types/node`), and the dead process-wide `*_api_key` settings/fallbacks were
+removed (per-repo encrypted keys make them unreachable). See *Done recently*.
+
 Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher — safe as-is
 (admin-only), but get a `/security-review` before any non-admin exposure. See *Next up*.
 
@@ -29,9 +37,10 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | Copy invite-link (`#104`), squash-merged this session; before it `#103`, `#102` |
-| Last merged PR | **`#104`** — copy invite-link button; before it #103 (i18n), #102 (dropdown) |
+| `main` HEAD | Model-picker UX + green CI + env cleanup, squash-merged this session; before it `#104`, `#103`, `#102` |
+| Last merged PR | model-picker UX / green-CI / env-key cleanup; before it **`#104`** (copy invite-link), #103 (i18n), #102 (dropdown) |
 | In flight | none |
+| CI | **green** (was red #101–#104: prettier + a masked `vite.config.ts` typecheck error) |
 
 **Clean state.** Working tree clean; `main` even with `origin/main`. The invite-copy PR
 was **squash-merged**. **Prunable local branches:** `feat/copy-invite-link` (merged),
@@ -41,6 +50,29 @@ and the old `feat/1-project-scaffolding` (all safe to `git branch -D`).
 ---
 
 ## Done recently (this session)
+
+### Model-picker UX + green CI + drop dead provider-key env fallbacks — squash-merged
+
+Three related fixes in one PR (branch `fix/model-picker-ux-and-ci`):
+
+- **Model dropdown made visible (the "Gemini does not work" report).** Root cause was
+  *not* Gemini: the list-models backend is correct — verified against the live Gemini API
+  (56 models, 41 with `generateContent`). The frontend pushed results into a `<datalist>`,
+  which renders **no visible change**, so a successful load looked like nothing happened.
+  Replaced with a real `<select>` dropdown that appears once models load, plus a
+  "Loaded N models" confirmation; selecting one fills the still-free-text Model input.
+  New i18n keys `repositories.chooseModel` / `chooseModelPlaceholder` / `modelsLoaded`
+  (EN + UK). `AdminRepositoriesPage.test.tsx` updated to assert the `<select>` + pick-fills-input.
+- **CI green again (red since #101).** Prettier flagged 3 unformatted files
+  (`AdminRepositoriesPage.tsx/.test.tsx`, `AdminUsersPage.tsx`) — `npm run format`. And
+  masked behind that early failure, `tsc` couldn't find `process` in `vite.config.ts`
+  (the `VITE_PROXY_TARGET` override) → added `@types/node` + `"types":["node"]` in
+  `tsconfig.node.json`. Full suite now passes (ruff/mypy/pytest 334✓, vitest 60✓, build, e2e 2✓).
+- **Removed dead process-wide provider keys.** `build_repo_llm` always passes the repo's
+  own decrypted key ("never a process-wide default"), so the four `*_api_key` settings and
+  their `or settings.X_api_key` fallbacks were unreachable. Dropped the config fields, the
+  provider fallbacks, and the `.env.example` entries. Local `.env` left untouched (gitignored;
+  `extra="ignore"` means leftover key lines are harmless — safe to delete by hand).
 
 ### Copy invite-link button — `#104`, squash-merged
 

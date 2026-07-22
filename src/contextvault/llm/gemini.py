@@ -48,15 +48,14 @@ class GeminiLLMProvider:
         """Configure the provider.
 
         ``client`` injects a ``genai.Client`` (mainly for tests); otherwise one is
-        built from ``api_key`` (falling back to the ``gemini_api_key`` setting,
-        then the SDK's own ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY`` resolution).
-        ``model`` and ``max_tokens`` default to the ``gemini_model`` /
-        ``llm_max_tokens`` settings.
+        built from the per-repository ``api_key`` (each repository carries its own
+        encrypted key — there is no process-wide key fallback). ``model`` and
+        ``max_tokens`` default to the ``gemini_model`` / ``llm_max_tokens`` settings.
         """
         settings = get_settings()
         self._model = model or settings.gemini_model
         self._max_tokens = max_tokens or settings.llm_max_tokens
-        self._client = client or genai.Client(api_key=api_key or settings.gemini_api_key)
+        self._client = client or genai.Client(api_key=api_key)
 
     async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
         """Generate a grounded, cited answer to ``question`` from ``chunks``.

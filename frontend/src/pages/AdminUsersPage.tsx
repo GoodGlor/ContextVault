@@ -24,14 +24,12 @@ export function AdminUsersPage(): ReactNode {
     listUsers()
       .then((u) => !cancelled && setUsers(u))
       .catch(
-        (err: unknown) =>
-          !cancelled && setUsersError(errorMessage(err, t("users.loadUsersError"))),
+        (err: unknown) => !cancelled && setUsersError(errorMessage(err, t("users.loadUsersError"))),
       );
     listAllRepositories()
       .then((r) => !cancelled && setRepos(r))
       .catch(
-        (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, t("users.loadReposError"))),
+        (err: unknown) => !cancelled && setReposError(errorMessage(err, t("users.loadReposError"))),
       );
     return () => {
       cancelled = true;
@@ -119,8 +117,7 @@ function InviteForm(): ReactNode {
       </form>
       {invite !== null && (
         <p className="invite-link">
-          {t("users.inviteLinkPrefix")} <strong>{invite.username}</strong>:{" "}
-          <code>{inviteUrl}</code>{" "}
+          {t("users.inviteLinkPrefix")} <strong>{invite.username}</strong>: <code>{inviteUrl}</code>{" "}
           <button type="button" className="copy-invite" onClick={onCopy}>
             {copied ? t("users.copiedLink") : t("users.copyLink")}
           </button>{" "}

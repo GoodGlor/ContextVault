@@ -37,8 +37,7 @@ export function AdminRepositoriesPage(): ReactNode {
       .then((rs) => !cancelled && setRepos(rs))
       .catch(
         (err: unknown) =>
-          !cancelled &&
-          setReposError(errorMessage(err, t("repositories.failedToLoad"))),
+          !cancelled && setReposError(errorMessage(err, t("repositories.failedToLoad"))),
       );
     return () => {
       cancelled = true;
@@ -271,8 +270,7 @@ function RepoConfigPanel({
       })
       .catch(
         (err: unknown) =>
-          !cancelled &&
-          setLoadError(errorMessage(err, t("repositories.failedToLoadConfig"))),
+          !cancelled && setLoadError(errorMessage(err, t("repositories.failedToLoadConfig"))),
       );
     return () => {
       cancelled = true;
@@ -332,7 +330,7 @@ function RepoConfigPanel({
   const keyId = `key-${repository.id}`;
   const providerId = `provider-${repository.id}`;
   const modelId = `model-${repository.id}`;
-  const modelListId = `model-options-${repository.id}`;
+  const modelSelectId = `model-select-${repository.id}`;
 
   return (
     <form className="repo-config" onSubmit={onSave}>
@@ -360,21 +358,30 @@ function RepoConfigPanel({
       </select>
 
       <label htmlFor={modelId}>{t("repositories.model")}</label>
-      <input
-        id={modelId}
-        list={modelListId}
-        value={model}
-        onChange={(e) => setModel(e.target.value)}
-        required
-      />
-      <datalist id={modelListId}>
-        {models.map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
+      <input id={modelId} value={model} onChange={(e) => setModel(e.target.value)} required />
       <button type="button" onClick={onLoadModels} disabled={loadingModels}>
         {loadingModels ? t("repositories.loadingModels") : t("repositories.loadModels")}
       </button>
+      {/* A real, visible dropdown of the fetched models — picking one fills the input above.
+          (The plain <input> stays the source of truth so a custom id can still be typed.) */}
+      {models.length > 0 && (
+        <>
+          <label htmlFor={modelSelectId}>{t("repositories.chooseModel")}</label>
+          <select
+            id={modelSelectId}
+            value={models.includes(model) ? model : ""}
+            onChange={(e) => setModel(e.target.value)}
+          >
+            <option value="">{t("repositories.chooseModelPlaceholder")}</option>
+            {models.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <p className="success">{t("repositories.modelsLoaded", { n: models.length })}</p>
+        </>
+      )}
       {modelsError !== null && <p className="error">{modelsError}</p>}
 
       <label htmlFor={keyId}>{t("repositories.apiKey")}</label>
