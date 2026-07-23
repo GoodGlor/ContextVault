@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminInsightsPage } from "./AdminInsightsPage";
 import type { AdminRepository } from "../api/repositories";
-import type { KnowledgeGap } from "../api/knowledgeGaps";
+import type { KnowledgeGap, GapRejection } from "../api/knowledgeGaps";
 import type { AnalyticsOverview } from "../api/analytics";
 
 function json(body: unknown, status = 200): Response {
@@ -53,12 +53,30 @@ describe("AdminInsightsPage", () => {
     vi.unstubAllGlobals();
   });
 
-  function mock(opts: { repos?: AdminRepository[]; gaps?: KnowledgeGap[] } = {}) {
+  function mock(
+    opts: { repos?: AdminRepository[]; gaps?: KnowledgeGap[]; rejected?: GapRejection[] } = {},
+  ) {
     const repos = opts.repos ?? REPOS;
     const gaps = opts.gaps ?? GAPS;
+    const rejected = opts.rejected ?? [];
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       if (url.endsWith("/admin/repositories")) return Promise.resolve(json(repos));
+      if (url.includes("/knowledge-gaps/rejected")) return Promise.resolve(json(rejected));
+      if (url.includes("/knowledge-gaps/reject") && method === "POST") {
+        const body = JSON.parse(String(init?.body)) as { question: string; reason: string };
+        return Promise.resolve(
+          json(
+            {
+              question: body.question,
+              reason: body.reason,
+              rejected_by: "admin",
+              rejected_at: "2026-07-20T10:00:00Z",
+            },
+            201,
+          ),
+        );
+      }
       if (url.includes("/knowledge-gaps")) return Promise.resolve(json(gaps));
       if (url.includes("/analytics")) return Promise.resolve(json(ANALYTICS));
       if (/\/repositories\/[^/]+\/admin-notes$/.test(url) && method === "POST") {
@@ -130,5 +148,35 @@ describe("AdminInsightsPage", () => {
     expect(within(analytics).getByText("Handbook")).toBeInTheDocument();
     expect(within(analytics).getByText("How do I reset 2FA?")).toBeInTheDocument();
     expect(within(analytics).getByText("member")).toBeInTheDocument();
+  });
+
+  it("rejects a gap with a required reason and removes it from the list", async () => {
+    mock({
+      gaps: [
+        {
+          question: "What is the VPN?",
+          ask_count: 2,
+          user_count: 1,
+          last_asked_at: "2026-07-19T10:00:00Z",
+        },
+      ],
+    });
+    render(<AdminInsightsPage />);
+    await screen.findByText("What is the VPN?");
+    await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+    // confirm blocked while reason empty:
+    expect(screen.getByRole("button", { name: "Confirm rejection" })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("Reason for rejecting"), "Out of scope");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm rejection" }));
+    expect(screen.queryByText("What is the VPN?")).not.toBeInTheDocument();
+    // "/knowledge-gaps/reject" is also a substring of the GET "/knowledge-gaps/rejected"
+    // call made on mount, so also filter on method to find the POST specifically.
+    const call = fetchMock.mock.calls.find(
+      (c) => String(c[0]).includes("/knowledge-gaps/reject") && (c[1]?.method ?? "GET") === "POST",
+    );
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({
+      question: "What is the VPN?",
+      reason: "Out of scope",
+    });
   });
 });

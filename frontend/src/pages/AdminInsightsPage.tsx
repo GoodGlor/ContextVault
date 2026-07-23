@@ -3,7 +3,13 @@ import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { listAllRepositories, type AdminRepository } from "../api/repositories";
-import { listKnowledgeGaps, type KnowledgeGap } from "../api/knowledgeGaps";
+import {
+  listKnowledgeGaps,
+  rejectGap,
+  listRejectedGaps,
+  type KnowledgeGap,
+  type GapRejection,
+} from "../api/knowledgeGaps";
 import { getAnalytics, type AnalyticsOverview } from "../api/analytics";
 import { createAdminNote } from "../api/adminNotes";
 
@@ -49,6 +55,7 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
   const [gaps, setGaps] = useState<KnowledgeGap[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [answered, setAnswered] = useState<string | null>(null);
+  const [rejected, setRejected] = useState<GapRejection[] | null>(null);
 
   useEffect(() => {
     if (selected === "") return;
@@ -56,11 +63,13 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
     setGaps(null);
     setError(null);
     setAnswered(null);
+    setRejected(null);
     listKnowledgeGaps(selected)
       .then((g) => !cancelled && setGaps(g))
       .catch(
         (err: unknown) => !cancelled && setError(errorMessage(err, t("insights.errorLoadGaps"))),
       );
+    listRejectedGaps(selected).then((r) => !cancelled && setRejected(r));
     return () => {
       cancelled = true;
     };
@@ -70,6 +79,11 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
     // The gap closes once the note is ingested; drop it from the to-do list now.
     setGaps((prev) => prev?.filter((g) => g.question !== question) ?? prev);
     setAnswered(question);
+  };
+
+  const onRejected = (question: string) => {
+    setGaps((prev) => prev?.filter((g) => g.question !== question) ?? prev);
+    listRejectedGaps(selected).then((r) => setRejected(r));
   };
 
   return (
@@ -101,7 +115,28 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
               gap={gap}
               repositoryId={selected}
               onAnswered={() => onAnswered(gap.question)}
+              onRejected={() => onRejected(gap.question)}
             />
+          ))}
+        </ul>
+      )}
+
+      <h3>{t("insights.rejectedGaps")}</h3>
+      {rejected === null ? null : rejected.length === 0 ? (
+        <p>{t("insights.noRejectedGaps")}</p>
+      ) : (
+        <ul className="rejected-gap-list">
+          {rejected.map((r) => (
+            <li key={r.question}>
+              <span className="gap-question">{r.question}</span>
+              <span className="gap-reason">{r.reason}</span>
+              <span className="gap-signal">
+                {t("insights.rejectedBy", {
+                  admin: r.rejected_by ?? "—",
+                  date: new Date(r.rejected_at).toLocaleDateString(),
+                })}
+              </span>
+            </li>
           ))}
         </ul>
       )}
@@ -113,16 +148,22 @@ function GapRow({
   gap,
   repositoryId,
   onAnswered,
+  onRejected,
 }: {
   gap: KnowledgeGap;
   repositoryId: string;
   onAnswered: () => void;
+  onRejected: () => void;
 }): ReactNode {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -138,9 +179,21 @@ function GapRow({
     }
   };
 
+  const onReject = async (e: FormEvent) => {
+    e.preventDefault();
+    if (reason.trim() === "") return;
+    try {
+      await rejectGap(repositoryId, { question: gap.question, reason: reason.trim() });
+      onRejected(); // parent removes the gap + refreshes the rejected list
+    } catch (err) {
+      setRejectError(errorMessage(err, t("insights.errorRejectGap")));
+    }
+  };
+
   const lastAsked = new Date(gap.last_asked_at).toLocaleDateString();
   const titleId = `note-title-${gap.question}`;
   const answerId = `note-answer-${gap.question}`;
+  const reasonId = `reject-reason-${gap.question}`;
 
   return (
     <li className="gap-item">
@@ -166,6 +219,26 @@ function GapRow({
             {t("insights.saveNote")}
           </button>
           {error !== null && <p className="error">{error}</p>}
+        </form>
+      )}
+
+      {!rejecting ? (
+        <button type="button" onClick={() => setRejecting(true)}>
+          {t("insights.rejectGap")}
+        </button>
+      ) : (
+        <form className="reject-editor" onSubmit={onReject}>
+          <label htmlFor={reasonId}>{t("insights.rejectReason")}</label>
+          <textarea
+            id={reasonId}
+            value={reason}
+            placeholder={t("insights.rejectReasonPlaceholder")}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button type="submit" disabled={reason.trim() === ""}>
+            {t("insights.confirmReject")}
+          </button>
+          {rejectError !== null && <p className="error">{rejectError}</p>}
         </form>
       )}
     </li>
