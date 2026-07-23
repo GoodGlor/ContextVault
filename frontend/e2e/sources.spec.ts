@@ -2,28 +2,20 @@ import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 /**
- * End-to-end: an admin adds the two new source kinds — an OCR image and a web
- * link — to a fresh repository, against the *real* stack (backend + Postgres +
- * frontend, brought up by `./dev.sh`). Exercises the upload/add flows, the kind
- * badges, the OCR text-only contract, and the web-link form through a real
- * browser. Run with the stack up: `npm run test:e2e`.
+ * End-to-end: an admin adds sources to a fresh repository, against the *real* stack
+ * (backend + Postgres + frontend, brought up by `./dev.sh`). Covers the web-link flow
+ * and — since images are now OCR'd by the repo's configured vision model — that an
+ * image upload to a repo with no model configured is blocked with a clear message
+ * (the real 409 gate; a live OCR run isn't deterministic, so it stays in pytest).
+ * Run with the stack up: `npm run test:e2e`.
  */
 
 const ADMIN = { username: "admin", password: "adminpass123" };
 
-// A 1x1 transparent PNG: a valid image with no text. OCR extracts nothing, so
-// the source must end FAILED with the text-only message — the design contract.
+// A 1x1 transparent PNG — a valid image. The repo has no configured model, so the
+// upload must be blocked before any OCR is attempted.
 const BLANK_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
-
-// A 16x16 white HEIC (iPhone format): decodable but text-less. If HEIC decoding
-// works end-to-end it OCRs to nothing and ends FAILED with the text-only message
-// ("No text found in image.") — a decode failure would instead say "Could not
-// read image file.", so this fixture proves the pillow-heif path is wired up.
-const BLANK_HEIC = Buffer.from(
-  "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAXxtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAACJpbG9jAAAAAERAAAEAAQAAAAABoAABAAAAAAAAACsAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRtAAAAAAABAAAA/GlwcnAAAADcaXBjbwAAAHVodmNDAQNwAAAAAAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMAAAMAHroCQGEAAQApQgEBA3AAAAMAkAAAAwAAAwAeoCCBBZbqrprm4CGgwIAAAAyAAAADAIRiAAEABkQBwXPBiQAAABNjb2xybmNseAABAA0ABoAAAAAUaXNwZQAAAAAAAABAAAAAQAAAAChjbGFwAAAAEAAAAAEAAAAQAAAAAf///9AAAAAC////0AAAAAIAAAAQcGl4aQAAAAADCAgIAAAAGGlwbWEAAAAAAAAAAQABBYECAwWEAAAAM21kYXQAAAAnKAGvEyExlvhOUKeW/WMCzQyVTFq5T6Vz3QpQk3J+uP7yh5PFYoLg",
   "base64",
 );
 
@@ -75,8 +67,9 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
   await expect(webRow.locator("span.badge.kind-web")).toBeVisible();
   await expect(webRow.getByRole("link", { name: url })).toHaveAttribute("href", url);
 
-  // --- Image source: uploading a text-less image creates a row tagged `image`
-  // which OCR must reject per the text-only contract (ends FAILED). ---
+  // --- Image source on an unconfigured repo: images are read by the repo's own
+  // vision model, so with no model configured the upload is blocked with a clear,
+  // actionable message (the real 409 gate) and no source row is created. ---
   await page.getByLabel("Documents").setInputFiles({
     name: "blank.png",
     mimeType: "image/png",
@@ -84,29 +77,8 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
   });
   await page.getByRole("button", { name: "Upload" }).click();
 
-  const imageRow = page.locator("li.source-item", { hasText: "blank.png" });
-  await expect(imageRow).toBeVisible();
-  await expect(imageRow.locator("span.badge.kind-image")).toBeVisible();
-
-  // The page polls ingestion status; a wordless image fails the OCR text-only
-  // contract, so the row lands on FAILED with the expected message.
-  await expect(imageRow.locator("span.badge.status-failed")).toBeVisible({ timeout: 20_000 });
-  await expect(imageRow.getByText("No text found in image.")).toBeVisible();
-
-  // --- HEIC source: an iPhone-format image is classified `image` and decoded
-  // via pillow-heif. This one is text-less, so it too must reach the OCR
-  // text-only failure ("No text found in image.") — proving HEIC decodes rather
-  // than erroring at "Could not read image file." ---
-  await page.getByLabel("Documents").setInputFiles({
-    name: "photo.heic",
-    mimeType: "image/heic",
-    buffer: BLANK_HEIC,
-  });
-  await page.getByRole("button", { name: "Upload" }).click();
-
-  const heicRow = page.locator("li.source-item", { hasText: "photo.heic" });
-  await expect(heicRow).toBeVisible();
-  await expect(heicRow.locator("span.badge.kind-image")).toBeVisible();
-  await expect(heicRow.locator("span.badge.status-failed")).toBeVisible({ timeout: 20_000 });
-  await expect(heicRow.getByText("No text found in image.")).toBeVisible();
+  await expect(
+    page.getByText(/configure a model for this repository before uploading images/i),
+  ).toBeVisible();
+  await expect(page.locator("li.source-item", { hasText: "blank.png" })).toHaveCount(0);
 });

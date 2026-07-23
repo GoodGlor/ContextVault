@@ -589,10 +589,23 @@ label {
 .admin-repos,
 .admin-sources,
 .admin-users,
-.admin-insights {
+.admin-insights,
+.admin-providers {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.providers-intro {
+  margin: 0;
+  color: var(--muted);
+  max-width: 640px;
+}
+/* A neutral inline notice (e.g. "add a provider key first") */
+.notice {
+  margin: 0.4rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 /* Each labelled section becomes a raised card */
@@ -615,6 +628,7 @@ label {
 .source-upload,
 .source-web,
 .note-editor,
+.provider-form,
 .admin-users form,
 .admin-insights form {
   display: flex;
@@ -628,10 +642,15 @@ label {
 .source-upload button,
 .source-web button,
 .note-editor button,
+.provider-form button,
 .admin-users form button,
 .admin-insights form button {
   align-self: flex-start;
   margin-top: 0.6rem;
+}
+/* a provider row's action buttons sit side by side */
+.provider-form button ~ button {
+  margin-left: 0.5rem;
 }
 label + input,
 label + textarea,
@@ -646,6 +665,7 @@ label + select {
 .user-list,
 .grant-list,
 .gap-list,
+.provider-list,
 .top-questions,
 .active-users,
 .by-day {
@@ -660,7 +680,8 @@ label + select {
 .source-list .source-item,
 .user-item,
 .grant-item,
-.gap-item {
+.gap-item,
+.provider-item {
   padding: 1rem 1.2rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -672,14 +693,16 @@ label + select {
 .source-list .source-item:hover,
 .user-item:hover,
 .grant-item:hover,
-.gap-item:hover {
+.gap-item:hover,
+.provider-item:hover {
   border-color: var(--border-strong);
 }
 
 .repo-head,
 .user-item,
 .source-list .source-item,
-.grant-item {
+.grant-item,
+.provider-head {
   display: flex;
   align-items: center;
   gap: 0.8rem;
@@ -689,7 +712,8 @@ label + select {
 .user-name,
 .source-title,
 .grant-user,
-.gap-question {
+.gap-question,
+.provider-name {
   font-weight: 650;
   color: var(--text);
 }

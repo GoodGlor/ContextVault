@@ -13,6 +13,7 @@ admin's nickname. That is the whole loop: admin curation → permanently smarter
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -25,7 +26,7 @@ from contextvault.db.session import get_session
 from contextvault.llm.base import Answer, Citation
 from contextvault.llm.citations import not_in_vault_answer
 from contextvault.main import create_app
-from contextvault.models import Grant, LLMProviderName, Repository, Role, User
+from contextvault.models import Grant, LLMProviderName, ProviderSetting, Repository, Role, User
 from contextvault.retrieval import RetrievedChunk
 from contextvault.services import users as user_service
 
@@ -84,7 +85,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_session] = _use_test_session
     app.dependency_overrides[get_embedder] = lambda: FakeEmbedder(get_settings().embedding_dim)
     app.dependency_overrides[get_ingestion_session_factory] = lambda: _fixed_factory(db_session)
-    app.dependency_overrides[get_llm_builder] = lambda: lambda repo: RecordingProvider()
+    app.dependency_overrides[get_llm_builder] = lambda: _fake_builder
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -100,11 +101,19 @@ async def _token(client: AsyncClient, username: str) -> str:
     return str(resp.json()["access_token"])
 
 
+async def _fake_builder(session: AsyncSession, repo: Repository) -> RecordingProvider:
+    return RecordingProvider()
+
+
 async def _repo(db_session: AsyncSession) -> Repository:
-    repo = Repository(name="Vault")
-    repo.llm_provider = LLMProviderName.OPENAI
-    repo.llm_model = "gpt-4o"
-    repo.api_key_encrypted = encrypt("sk-test-key")
+    db_session.add(
+        ProviderSetting(
+            provider=LLMProviderName.OPENAI,
+            api_key_encrypted=encrypt("sk-test-key"),
+            verified_at=datetime.now(UTC),
+        )
+    )
+    repo = Repository(name="Vault", llm_provider=LLMProviderName.OPENAI, llm_model="gpt-4o")
     db_session.add(repo)
     await db_session.flush()
     return repo

@@ -25,6 +25,7 @@ from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.ingestion import IMAGE_SUFFIXES, file_suffix
 from contextvault.models import Repository, Source, SourceKind, SourceStatus, User
 from contextvault.services import grants as grant_service
+from contextvault.services import providers as provider_service
 from contextvault.services.ingestion import SessionFactory, run_ingestion, run_web_ingestion
 
 router = APIRouter(tags=["sources"])
@@ -72,6 +73,18 @@ async def upload_source(
     filename = file.filename or "untitled"
     suffix = file_suffix(filename)
     kind = SourceKind.IMAGE if suffix in IMAGE_SUFFIXES else SourceKind.DOCUMENT
+
+    # Images are OCR'd by the repository's own vision model, so the repo must be
+    # answerable (a model picked whose provider has a verified key) before we accept
+    # one — fail fast here rather than let the upload land and its ingestion fail.
+    if kind is SourceKind.IMAGE and not await provider_service.repo_is_answerable(session, repo):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Configure a model for this repository before uploading images: pick a "
+                "model whose provider has a verified API key."
+            ),
+        )
     source = Source(
         repository_id=repository_id,
         kind=kind,

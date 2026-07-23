@@ -14,13 +14,6 @@ blocks)`` — so a character offset from a chunk can be mapped back to its block
 from dataclasses import dataclass
 from io import BytesIO
 
-from pillow_heif import register_heif_opener
-
-# Teach Pillow to decode HEIC/HEIF (iPhone photos). Registering here — at import
-# of the parsing module — means the existing ``Image.open`` in ``_parse_image``
-# handles those formats with no further changes.
-register_heif_opener()
-
 
 class DocumentError(Exception):
     """Base class for document-parsing failures."""
@@ -108,26 +101,10 @@ def _parse_pdf(data: bytes) -> ParsedDocument:
     return _blocks_from_segments(segments)
 
 
-def _parse_image(data: bytes) -> ParsedDocument:
-    from PIL import Image, UnidentifiedImageError
-
-    from contextvault.ingestion.ocr import ocr_image
-
-    try:
-        image = Image.open(BytesIO(data))
-        image.load()
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
-        raise DocumentParseError("Could not read image file.") from exc
-
-    text = ocr_image(image)
-    if not text.strip():
-        raise DocumentParseError("No text found in image.")
-    return _blocks_from_segments([(text, None)])
-
-
-# Extensions routed to the image parser; the single source of truth for what
-# counts as an "image" upload (also consumed by the sources API to classify
-# a Source's kind without duplicating this enumeration).
+# Extensions that count as an "image" upload — the single source of truth, also
+# consumed by the sources API (to classify a Source's kind) and the ingestion layer
+# (to route images to LLM-based OCR instead of ``parse_document``). Images are not in
+# ``_PARSERS``: they are transcribed by the repository's vision model, not parsed here.
 IMAGE_SUFFIXES: frozenset[str] = frozenset(
     {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp", ".heic", ".heif"}
 )
@@ -136,7 +113,6 @@ _PARSERS = {
     ".txt": _parse_txt,
     ".docx": _parse_docx,
     ".pdf": _parse_pdf,
-    **{suffix: _parse_image for suffix in IMAGE_SUFFIXES},
 }
 
 

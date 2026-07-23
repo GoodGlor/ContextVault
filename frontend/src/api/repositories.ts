@@ -33,12 +33,12 @@ export interface AdminRepository {
   configured: boolean;
 }
 
-// Mirrors LLMConfigResponse in src/contextvault/api/repositories.py. The key is
-// write-only: it comes back only masked, never in full after entry.
+// Mirrors LLMConfigResponse in src/contextvault/api/repositories.py. A repo picks a
+// provider + model; the API key is global (Providers settings), not stored here.
+// `configured` means answerable: a model is picked and its provider has a verified key.
 export interface LLMConfig {
   provider: LLMProvider | null;
   model: string | null;
-  api_key_masked: string | null;
   configured: boolean;
 }
 
@@ -75,11 +75,11 @@ export function getLlmConfig(repositoryId: string): Promise<LLMConfig> {
   return api.get<LLMConfig>(`/repositories/${repositoryId}/llm-config`);
 }
 
-/** Set a repository's LLM provider/model, and optionally (re)set its key.
- *  Omit `api_key` to keep the stored key (e.g. when only changing the model). */
+/** Pick the provider + model a repository answers with. The API key is not sent — it
+ *  is shared from the global provider settings; the provider must already be verified. */
 export function setLlmConfig(
   repositoryId: string,
-  input: { provider: LLMProvider; model: string; api_key?: string },
+  input: { provider: LLMProvider; model: string },
 ): Promise<LLMConfig> {
   return api.put<LLMConfig>(`/repositories/${repositoryId}/llm-config`, input);
 }
@@ -89,11 +89,11 @@ export interface ModelList {
   models: string[];
 }
 
-/** Fetch a provider's available models for the model dropdown (admin-only). Sends the
- *  just-entered `api_key` when present; omit it to use the repo's stored key. */
+/** Fetch a provider's available models for the model dropdown (admin-only), using that
+ *  provider's global (verified) key. The provider must have a key in Providers settings. */
 export function listModels(
   repositoryId: string,
-  input: { provider: LLMProvider; api_key?: string },
+  input: { provider: LLMProvider },
 ): Promise<ModelList> {
   return api.post<ModelList>(`/repositories/${repositoryId}/llm-models`, input);
 }

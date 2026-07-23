@@ -8,17 +8,21 @@ transaction — proving upload → ingest → chunks end-to-end, offline and fas
 
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from io import BytesIO
 
 import pytest
 import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_embedder, get_ingestion_session_factory
 from contextvault.core.config import get_settings
+from contextvault.core.crypto import encrypt
 from contextvault.db.session import get_session
 from contextvault.main import create_app
-from contextvault.models import Chunk, Repository, Role, Source
+from contextvault.models import Chunk, LLMProviderName, ProviderSetting, Repository, Role, Source
 from contextvault.services import users as user_service
 
 
@@ -69,6 +73,21 @@ async def _token(client: AsyncClient, db_session: AsyncSession, role: Role) -> s
 
 async def _repo(db_session: AsyncSession) -> Repository:
     repo = Repository(name="Vault")
+    db_session.add(repo)
+    await db_session.flush()
+    return repo
+
+
+async def _answerable_repo(db_session: AsyncSession) -> Repository:
+    """A repo that can read images: a model picked whose provider has a verified key."""
+    db_session.add(
+        ProviderSetting(
+            provider=LLMProviderName.OPENAI,
+            api_key_encrypted=encrypt("sk-test"),
+            verified_at=datetime.now(UTC),
+        )
+    )
+    repo = Repository(name="Vault", llm_provider=LLMProviderName.OPENAI, llm_model="gpt-4o")
     db_session.add(repo)
     await db_session.flush()
     return repo
@@ -154,20 +173,45 @@ async def test_upload_records_failure_for_unsupported_type(
     assert body["ingest_error"]
 
 
-async def test_image_upload_sets_image_kind(db_session: AsyncSession, client: AsyncClient) -> None:
-    repo = await _repo(db_session)
+async def test_image_upload_ocrs_via_repo_model(
+    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An image is transcribed by the repo's vision model; stub that call so the test
+    # is deterministic and offline, then prove the transcription is chunked/stored.
+    async def fake_transcribe(provider: str, api_key: str, model: str, *, image: bytes) -> str:
+        return "Оплата 1250 грн"
+
+    monkeypatch.setattr("contextvault.services.ingestion.transcribe_image", fake_transcribe)
+    repo = await _answerable_repo(db_session)
     token = await _token(client, db_session, Role.ADMIN)
 
+    png = BytesIO()
+    Image.new("RGB", (8, 8), "white").save(png, format="PNG")
     resp = await client.post(
         f"/repositories/{repo.id}/sources",
-        files={"file": ("diagram.png", b"\x89PNG\r\n", "image/png")},
+        files={"file": ("diagram.png", png.getvalue(), "image/png")},
         headers=_auth(token),
     )
     assert resp.status_code == 201
-    assert resp.json()["kind"] == "image"
+    body = resp.json()
+    assert body["kind"] == "image"
+    source_id = body["id"]
+
+    status_resp = await client.get(f"/sources/{source_id}", headers=_auth(token))
+    assert status_resp.json()["status"] == "done"
+    count = (
+        await db_session.execute(
+            sa.select(sa.func.count()).select_from(Chunk).where(Chunk.source_id == source_id)
+        )
+    ).scalar_one()
+    assert count >= 1
 
 
-async def test_heic_upload_sets_image_kind(db_session: AsyncSession, client: AsyncClient) -> None:
+async def test_image_upload_blocked_until_model_configured(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    # Without a usable model the repo can't OCR, so image upload fails fast with 409
+    # rather than landing a source whose ingestion is doomed.
     repo = await _repo(db_session)
     token = await _token(client, db_session, Role.ADMIN)
 
@@ -176,8 +220,8 @@ async def test_heic_upload_sets_image_kind(db_session: AsyncSession, client: Asy
         files={"file": ("photo.heic", b"\x00\x00\x00\x18ftypheic", "image/heic")},
         headers=_auth(token),
     )
-    assert resp.status_code == 201
-    assert resp.json()["kind"] == "image"
+    assert resp.status_code == 409
+    assert "model" in resp.json()["detail"].lower()
 
 
 async def test_document_upload_sets_document_kind(

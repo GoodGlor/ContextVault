@@ -7,6 +7,7 @@ import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { QueryPage } from "./pages/QueryPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
+import { AdminProvidersPage } from "./pages/AdminProvidersPage";
 import { AdminSourcesPage } from "./pages/AdminSourcesPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminInsightsPage } from "./pages/AdminInsightsPage";
@@ -38,6 +39,14 @@ export function App(): ReactNode {
           element={
             <RequireAuth requireAdmin>
               <AdminRepositoriesPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/providers"
+          element={
+            <RequireAuth requireAdmin>
+              <AdminProvidersPage />
             </RequireAuth>
           }
         />

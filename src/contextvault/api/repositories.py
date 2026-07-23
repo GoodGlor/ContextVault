@@ -15,39 +15,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_current_user, require_admin
 from contextvault.core.config import get_settings
-from contextvault.core.crypto import decrypt, encrypt, mask_key
 from contextvault.db.session import get_session
 from contextvault.llm.models import ModelListError, list_models
 from contextvault.models import LLMProviderName, Repository, User
 from contextvault.services import grants as grant_service
+from contextvault.services import providers as provider_service
 
 router = APIRouter(tags=["repositories"])
 
 
 class LLMConfigRequest(BaseModel):
-    """Admin-supplied LLM configuration for one repository.
+    """Admin's choice of which model a repository answers with.
 
-    ``api_key`` is optional: once a repository has a stored key, an admin can change
-    its provider/model (or reload models) without re-entering the secret. Omit it (or
-    send blank) to keep the existing key; send a non-blank value to replace it. A
-    repository that has *no* stored key must supply one (enforced in the handler).
+    Only a provider + model — the API key is not per-repository. Keys live once per
+    provider (Providers settings); the chosen provider must already have a verified
+    key (enforced in the handler), and every repo using it shares that one key.
     """
 
     provider: LLMProviderName
     model: str = Field(min_length=1)
-    api_key: str | None = None
 
 
 class ListModelsRequest(BaseModel):
-    """Ask a provider for its available models (feature B).
+    """Ask a provider for its available models, using that provider's global key.
 
-    ``api_key`` is the just-entered key; when omitted/blank the endpoint falls back to
-    the repository's stored key, so an already-configured repo can reload its list
-    without the client re-sending the (masked) secret.
+    The provider must have a verified key in the Providers settings; there is no
+    per-request key — the model list is fetched with the stored, shared credential.
     """
 
     provider: LLMProviderName
-    api_key: str | None = None
 
 
 class ListModelsResponse(BaseModel):
@@ -88,12 +84,11 @@ class RepositoryResponse(BaseModel):
 
 
 class AdminRepositoryResponse(BaseModel):
-    """A repository as the admin manages it: identity plus its LLM-config state.
+    """A repository as the admin manages it: identity plus whether it can answer.
 
-    ``configured`` is the same predicate the query endpoint gates on (provider +
-    model + key all set), so the admin list can flag repos that can't yet answer.
-    The key itself is never included, masked or otherwise — that lives behind the
-    per-repo ``GET …/llm-config`` route.
+    ``configured`` is the same predicate the query endpoint gates on — a model is
+    picked *and* its provider has a verified key — so the admin list can flag repos
+    that can't yet answer. No key is ever included; keys live in Providers settings.
     """
 
     id: uuid.UUID
@@ -102,33 +97,37 @@ class AdminRepositoryResponse(BaseModel):
     configured: bool
 
 
-def _admin_response(repo: Repository) -> AdminRepositoryResponse:
+def _admin_response(repo: Repository, verified: set[LLMProviderName]) -> AdminRepositoryResponse:
+    """Serialize a repo for the admin list. ``verified`` is the set of providers with a
+    working key, so ``configured`` (answerable) is decided without a per-repo query."""
+    answerable = repo.llm_selected and repo.llm_provider in verified
     return AdminRepositoryResponse(
         id=repo.id,
         name=repo.name,
         description=repo.description,
-        configured=repo.llm_configured,
+        configured=answerable,
     )
 
 
 class LLMConfigResponse(BaseModel):
-    """A repository's LLM configuration, with the key masked (never in full)."""
+    """A repository's chosen provider/model and whether it can answer.
+
+    No key is included — keys are global (Providers settings). ``configured`` means
+    answerable: a model is picked and its provider has a verified key.
+    """
 
     provider: LLMProviderName | None
     model: str | None
-    api_key_masked: str | None
     configured: bool
 
 
-def _config_response(repo: Repository) -> LLMConfigResponse:
-    """Serialize a repo's config, masking the key by decrypting it in memory only
-    long enough to keep its prefix/suffix — the full secret never leaves here."""
-    masked = mask_key(decrypt(repo.api_key_encrypted)) if repo.api_key_encrypted else None
+def _config_response(repo: Repository, *, answerable: bool) -> LLMConfigResponse:
+    """Serialize a repo's model choice plus its answerability (computed by the caller,
+    which can see the global provider keys)."""
     return LLMConfigResponse(
         provider=repo.llm_provider,
         model=repo.llm_model,
-        api_key_masked=masked,
-        configured=repo.llm_configured,
+        configured=answerable,
     )
 
 
@@ -163,7 +162,8 @@ async def create_repository(
     session.add(repo)
     await session.commit()
     await session.refresh(repo)
-    return _admin_response(repo)
+    verified = await provider_service.verified_provider_names(session)
+    return _admin_response(repo, verified)
 
 
 @router.get("/admin/repositories")
@@ -174,7 +174,8 @@ async def list_all_repositories(
     """List *every* repository with its config state (admin-only, card #37). Distinct
     from ``GET /repositories``, which is scoped to the caller's granted repos."""
     result = await session.execute(select(Repository).order_by(Repository.created_at))
-    return [_admin_response(r) for r in result.scalars().all()]
+    verified = await provider_service.verified_provider_names(session)
+    return [_admin_response(r, verified) for r in result.scalars().all()]
 
 
 @router.patch("/repositories/{repository_id}")
@@ -196,7 +197,8 @@ async def update_repository(
         repo.description = data["description"]
     await session.commit()
     await session.refresh(repo)
-    return _admin_response(repo)
+    verified = await provider_service.verified_provider_names(session)
+    return _admin_response(repo, verified)
 
 
 @router.delete("/repositories/{repository_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -226,26 +228,24 @@ async def set_llm_config(
     _: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> LLMConfigResponse:
-    """Set a repository's LLM provider/model, and optionally (re)set its key.
+    """Pick the provider + model a repository answers with.
 
-    A supplied ``api_key`` is stored encrypted, replacing any existing one. When it is
-    omitted, the existing key is kept — so provider/model can be changed on their own.
-    A repository with no stored key must supply one (400 otherwise).
+    The API key is not set here — it is shared from the global provider settings. The
+    chosen provider must already have a verified key (400 otherwise); the repo then
+    answers through that provider using the shared credential.
     """
     repo = await _get_repo(session, repository_id)
-    key = (payload.api_key or "").strip()
-    if key:
-        repo.api_key_encrypted = encrypt(key)
-    elif repo.api_key_encrypted is None:
+    if payload.provider not in await provider_service.verified_provider_names(session):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An API key is required to configure this repository.",
+            detail="This provider has no verified API key; add one in Providers settings first.",
         )
     repo.llm_provider = payload.provider
     repo.llm_model = payload.model
     await session.commit()
     await session.refresh(repo)
-    return _config_response(repo)
+    answerable = await provider_service.repo_is_answerable(session, repo)
+    return _config_response(repo, answerable=answerable)
 
 
 @router.get("/repositories/{repository_id}/llm-config")
@@ -254,9 +254,10 @@ async def get_llm_config(
     _: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> LLMConfigResponse:
-    """Read a repository's LLM configuration (key masked; nulls if unconfigured)."""
+    """Read a repository's chosen provider/model and whether it can answer."""
     repo = await _get_repo(session, repository_id)
-    return _config_response(repo)
+    answerable = await provider_service.repo_is_answerable(session, repo)
+    return _config_response(repo, answerable=answerable)
 
 
 @router.post("/repositories/{repository_id}/llm-models")
@@ -268,21 +269,23 @@ async def list_llm_models(
 ) -> ListModelsResponse:
     """Fetch ``payload.provider``'s available models, for the admin model dropdown.
 
-    Uses the just-entered ``api_key`` when present, else the repository's stored key.
-    A provider failure (bad key, network) surfaces as a 400 rather than a 500.
+    Uses the provider's global (verified) key from the Providers settings; if that
+    provider has no key, returns 400. A provider failure (network) is a 400 too.
     """
-    repo = await _get_repo(session, repository_id)
-    key = (payload.api_key or "").strip()
-    if not key and repo.api_key_encrypted:
-        key = decrypt(repo.api_key_encrypted)
+    await _get_repo(session, repository_id)  # 404 if the repo is unknown
+    key = await provider_service.get_provider_key(session, payload.provider)
     if not key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No API key available to list models.",
+            detail="This provider has no verified API key; add one in Providers settings first.",
         )
-    base_url = get_settings().openrouter_base_url if payload.provider == "openrouter" else None
+    base_url = (
+        get_settings().openrouter_base_url
+        if payload.provider == LLMProviderName.OPENROUTER
+        else None
+    )
     try:
-        models = await list_models(payload.provider, key, base_url=base_url)
+        models = await list_models(payload.provider.value, key, base_url=base_url)
     except ModelListError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return ListModelsResponse(models=models)

@@ -8,6 +8,7 @@ every repository. Mirrors test_repositories_api's real-auth httpx harness.
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -16,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from contextvault.core.crypto import encrypt
 from contextvault.db.session import get_session
 from contextvault.main import create_app
-from contextvault.models import LLMProviderName, Repository, Role
+from contextvault.models import LLMProviderName, ProviderSetting, Repository, Role
 from contextvault.services import users as user_service
 
 
@@ -113,24 +114,37 @@ async def test_list_all_forbidden_for_non_admin(
 async def test_list_all_returns_every_repo_with_config_state(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
+    # "Ready" is answerable: a model picked whose provider has a verified key.
+    db_session.add(
+        ProviderSetting(
+            provider=LLMProviderName.OPENAI,
+            api_key_encrypted=encrypt("sk-proj-secret"),
+            verified_at=datetime.now(UTC),
+        )
+    )
     unconfigured = Repository(name="Empty")
     configured = Repository(
         name="Ready",
         description="ops",
         llm_provider=LLMProviderName.OPENAI,
         llm_model="gpt-4o",
-        api_key_encrypted=encrypt("sk-proj-secret"),
     )
-    db_session.add_all([unconfigured, configured])
+    # "Picked but no key": a model chosen for a provider with NO verified key is NOT
+    # answerable — proves ``configured`` spans both tables.
+    picked_no_key = Repository(
+        name="Picked", llm_provider=LLMProviderName.ANTHROPIC, llm_model="claude-opus-4-8"
+    )
+    db_session.add_all([unconfigured, configured, picked_no_key])
     await db_session.flush()
     token = await _token(client, db_session, Role.ADMIN)
 
     resp = await client.get("/admin/repositories", headers=_auth(token))
     assert resp.status_code == 200
     by_name = {r["name"]: r for r in resp.json()}
-    assert set(by_name) == {"Empty", "Ready"}
+    assert set(by_name) == {"Empty", "Ready", "Picked"}
     assert by_name["Empty"]["configured"] is False
     assert by_name["Ready"]["configured"] is True
+    assert by_name["Picked"]["configured"] is False
     assert by_name["Ready"]["description"] == "ops"
     # The list never leaks key material.
     assert "sk-proj-secret" not in resp.text

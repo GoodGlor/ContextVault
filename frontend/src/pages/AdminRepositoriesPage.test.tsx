@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminRepositoriesPage } from "./AdminRepositoriesPage";
-import type { AdminRepository, LLMConfig } from "../api/repositories";
+import type { AdminRepository, LLMConfig, LLMProvider } from "../api/repositories";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -16,19 +16,20 @@ const REPOS: AdminRepository[] = [
   { id: "r-2", name: "Runbook", description: null, configured: false },
 ];
 
-const UNCONFIGURED: LLMConfig = {
-  provider: null,
-  model: null,
-  api_key_masked: null,
-  configured: false,
-};
+const UNCONFIGURED: LLMConfig = { provider: null, model: null, configured: false };
+const CONFIGURED: LLMConfig = { provider: "openai", model: "gpt-4o", configured: true };
 
-const CONFIGURED: LLMConfig = {
-  provider: "openai",
-  model: "gpt-4o",
-  api_key_masked: "sk-…•••4f2a",
-  configured: true,
-};
+const ALL_PROVIDERS: LLMProvider[] = ["anthropic", "openai", "gemini", "openrouter"];
+
+/** Provider-status rows, marking `verified` ones as configured+verified. */
+function providerRows(verified: LLMProvider[]) {
+  return ALL_PROVIDERS.map((p) => ({
+    provider: p,
+    configured: verified.includes(p),
+    verified: verified.includes(p),
+    api_key_masked: verified.includes(p) ? "sk-…•••4f2a" : null,
+  }));
+}
 
 describe("AdminRepositoriesPage", () => {
   const fetchMock = vi.fn();
@@ -38,18 +39,21 @@ describe("AdminRepositoriesPage", () => {
     vi.unstubAllGlobals();
   });
 
-  /** Route every call the page makes; `configs` maps repo id -> its llm-config. */
+  /** Route every call the page makes. `verified` lists providers with a stored key. */
   function mock(opts: {
     repos?: AdminRepository[];
     configs?: Record<string, LLMConfig>;
     created?: AdminRepository;
     models?: string[];
     modelsStatus?: number;
+    verified?: LLMProvider[];
   }) {
     const repos = opts.repos ?? REPOS;
     const configs = opts.configs ?? {};
+    const verified = opts.verified ?? (["openai"] as LLMProvider[]);
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
+      if (url.endsWith("/admin/providers")) return Promise.resolve(json(providerRows(verified)));
       if (/\/repositories\/([^/]+)\/llm-models$/.test(url) && method === "POST") {
         if (opts.modelsStatus && opts.modelsStatus >= 400) {
           return Promise.resolve(
@@ -63,12 +67,7 @@ describe("AdminRepositoriesPage", () => {
         if (method === "PUT") {
           const body = JSON.parse(String(init?.body)) as { provider: string; model: string };
           return Promise.resolve(
-            json({
-              provider: body.provider,
-              model: body.model,
-              api_key_masked: "sk-…•••9z9z",
-              configured: true,
-            }),
+            json({ provider: body.provider, model: body.model, configured: true }),
           );
         }
         return Promise.resolve(json(configs[m[1]] ?? UNCONFIGURED));
@@ -86,7 +85,6 @@ describe("AdminRepositoriesPage", () => {
     render(<AdminRepositoriesPage />);
     expect(await screen.findByText("Handbook")).toBeInTheDocument();
     expect(screen.getByText("Runbook")).toBeInTheDocument();
-    // Handbook is configured, Runbook is not.
     expect(screen.getByText("Configured")).toBeInTheDocument();
     expect(screen.getByText("Not configured")).toBeInTheDocument();
   });
@@ -106,7 +104,6 @@ describe("AdminRepositoriesPage", () => {
     await userEvent.type(screen.getByLabelText("Description"), "internal wiki");
     await userEvent.click(screen.getByRole("button", { name: "Create repository" }));
 
-    // POSTed with the entered fields.
     const posted = fetchMock.mock.calls.find(
       (c) => (c[1]?.method ?? "GET") === "POST" && String(c[0]).endsWith("/repositories"),
     );
@@ -114,26 +111,26 @@ describe("AdminRepositoriesPage", () => {
       name: "Wiki",
       description: "internal wiki",
     });
-    // The created repo appears in the list.
     expect(await screen.findByText("Wiki")).toBeInTheDocument();
   });
 
-  it("configures an unconfigured repo: enter key, load models, pick one, save", async () => {
-    mock({ configs: { "r-2": UNCONFIGURED }, models: ["claude-opus-4-8", "claude-sonnet-5"] });
+  it("configures an unconfigured repo: pick a verified provider, models auto-load, save", async () => {
+    mock({
+      configs: { "r-2": UNCONFIGURED },
+      models: ["claude-opus-4-8", "claude-sonnet-5"],
+      verified: ["anthropic"],
+    });
     render(<AdminRepositoriesPage />);
     const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
-
     await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
 
-    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "anthropic");
-    // No stored key → the key field is required, and models can only load once it's entered.
-    await userEvent.type(screen.getByLabelText("API key"), "sk-ant-secret123");
-    await userEvent.click(screen.getByRole("button", { name: "Load models" }));
-
-    // The single Model field (a <select>) is populated from the fetched list.
+    // No verified provider is preselected as OpenAI here — anthropic is the only one
+    // with a key, so it's the default. Models auto-load for it (no key entry here).
     const modelSelect = (await screen.findByLabelText("Model")) as HTMLSelectElement;
     await userEvent.selectOptions(modelSelect, "claude-opus-4-8");
     expect(modelSelect.value).toBe("claude-opus-4-8");
+    // The repo config never asks for a key — keys live in the Providers tab.
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
 
@@ -142,57 +139,35 @@ describe("AdminRepositoriesPage", () => {
     expect(JSON.parse(String(put?.[1]?.body))).toEqual({
       provider: "anthropic",
       model: "claude-opus-4-8",
-      api_key: "sk-ant-secret123",
     });
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
-  it("loads models into the single Model dropdown and sends the entered provider/key", async () => {
-    mock({ configs: { "r-2": UNCONFIGURED }, models: ["claude-opus-4-8", "claude-sonnet-5"] });
-    render(<AdminRepositoriesPage />);
-    const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
-    await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
-
-    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "anthropic");
-    await userEvent.type(screen.getByLabelText("API key"), "sk-ant-secret123");
-    await userEvent.click(screen.getByRole("button", { name: "Load models" }));
-
-    // POSTed to the list-models endpoint with the entered provider + key.
-    const post = fetchMock.mock.calls.find(
-      (c) => (c[1]?.method ?? "GET") === "POST" && String(c[0]).includes("/llm-models"),
-    );
-    expect(String(post?.[0])).toContain("/repositories/r-2/llm-models");
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
-      provider: "anthropic",
-      api_key: "sk-ant-secret123",
+  it("auto-loads the model list for a configured repo and changes the model", async () => {
+    mock({
+      configs: { "r-1": CONFIGURED },
+      models: ["gpt-4o", "gpt-4o-mini"],
+      verified: ["openai"],
     });
-    // The returned models are the options of the one Model field.
-    const dropdown = (await screen.findByLabelText("Model")) as HTMLSelectElement;
-    expect(within(dropdown).getByRole("option", { name: "claude-opus-4-8" })).toBeInTheDocument();
-    expect(within(dropdown).getByRole("option", { name: "claude-sonnet-5" })).toBeInTheDocument();
-    await userEvent.selectOptions(dropdown, "claude-sonnet-5");
-    expect(dropdown.value).toBe("claude-sonnet-5");
-  });
-
-  it("changes the model of a configured repo without re-entering the key", async () => {
-    mock({ configs: { "r-1": CONFIGURED }, models: ["gpt-4o", "gpt-4o-mini"] });
     render(<AdminRepositoriesPage />);
     const handbook = (await screen.findByText("Handbook")).closest("li") as HTMLElement;
     await userEvent.click(within(handbook).getByRole("button", { name: "Configure" }));
 
-    // Auto-loaded on open: the Model dropdown holds the current model preselected.
+    // The Model dropdown holds the current model preselected, and the alternatives.
     const modelSelect = (await screen.findByLabelText("Model")) as HTMLSelectElement;
     expect(modelSelect.value).toBe("gpt-4o");
-    // No API-key field — an already-keyed provider offers "Replace key" instead.
-    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Replace key" })).toBeInTheDocument();
+    expect(within(modelSelect).getByRole("option", { name: "gpt-4o-mini" })).toBeInTheDocument();
+
+    // The list-models call sends only the provider — the global key is used server-side.
+    const post = fetchMock.mock.calls.find(
+      (c) => (c[1]?.method ?? "GET") === "POST" && String(c[0]).includes("/llm-models"),
+    );
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ provider: "openai" });
 
     await userEvent.selectOptions(modelSelect, "gpt-4o-mini");
     await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
 
-    // Saved with the new model and NO api_key — the stored key is kept.
     const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
-    expect(String(put?.[0])).toContain("/repositories/r-1/llm-config");
     expect(JSON.parse(String(put?.[1]?.body))).toEqual({
       provider: "openai",
       model: "gpt-4o-mini",
@@ -200,46 +175,37 @@ describe("AdminRepositoriesPage", () => {
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
-  it("reveals the key field when replacing the key on a configured repo", async () => {
-    mock({ configs: { "r-1": CONFIGURED }, models: ["gpt-4o"] });
-    render(<AdminRepositoriesPage />);
-    const handbook = (await screen.findByText("Handbook")).closest("li") as HTMLElement;
-    await userEvent.click(within(handbook).getByRole("button", { name: "Configure" }));
-    await screen.findByLabelText("Model");
-
-    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Replace key" }));
-    await userEvent.type(await screen.findByLabelText("API key"), "sk-new-key");
-    await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
-
-    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
-    expect(JSON.parse(String(put?.[1]?.body))).toEqual({
-      provider: "openai",
-      model: "gpt-4o",
-      api_key: "sk-new-key",
-    });
-  });
-
-  it("surfaces an error when loading models fails", async () => {
-    mock({ configs: { "r-2": UNCONFIGURED }, modelsStatus: 400 });
+  it("disables a provider that has no key", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, models: ["gpt-4o"], verified: ["openai"] });
     render(<AdminRepositoriesPage />);
     const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
     await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
 
-    await userEvent.type(screen.getByLabelText("API key"), "bad-key");
-    await userEvent.click(screen.getByRole("button", { name: "Load models" }));
-
-    expect(await screen.findByText(/could not list models/i)).toBeInTheDocument();
+    const providerSelect = (await screen.findByLabelText("Provider")) as HTMLSelectElement;
+    // OpenAI is usable; a keyless provider (Gemini) is disabled.
+    const gemini = within(providerSelect).getByRole("option", {
+      name: /Gemini/,
+    }) as HTMLOptionElement;
+    expect(gemini.disabled).toBe(true);
   });
 
-  it("shows the masked key for an already-configured repository", async () => {
-    mock({ configs: { "r-1": CONFIGURED } });
+  it("tells the admin to set up a provider when none is verified", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, verified: [] });
     render(<AdminRepositoriesPage />);
-    const handbook = (await screen.findByText("Handbook")).closest("li") as HTMLElement;
+    const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
 
-    await userEvent.click(within(handbook).getByRole("button", { name: "Configure" }));
+    expect(await screen.findByText(/Providers tab/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  });
 
-    // The current key comes back masked, never in full.
-    expect(await screen.findByText(/sk-…•••4f2a/)).toBeInTheDocument();
+  it("surfaces an error when loading models fails", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, modelsStatus: 400, verified: ["openai"] });
+    render(<AdminRepositoriesPage />);
+    const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
+
+    // Auto-load fires for the verified provider and fails.
+    expect(await screen.findByText(/could not list models/i)).toBeInTheDocument();
   });
 });
