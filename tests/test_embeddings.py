@@ -28,9 +28,7 @@ class _FakeModels:
     def __init__(self, recorder: dict[str, Any]) -> None:
         self._recorder = recorder
 
-    def embed_content(
-        self, *, model: str, contents: Sequence[str], config: Any
-    ) -> _FakeResponse:
+    def embed_content(self, *, model: str, contents: Sequence[str], config: Any) -> _FakeResponse:
         self._recorder.setdefault("calls", []).append(
             {"model": model, "contents": list(contents), "config": config}
         )
