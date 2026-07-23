@@ -38,12 +38,16 @@ async def get_or_create_conversation(
 async def list_turns(session: AsyncSession, conversation_id: uuid.UUID) -> list[ConversationTurn]:
     """All turns of a conversation, oldest first."""
     rows = (
-        await session.execute(
-            sa.select(ConversationTurn)
-            .where(ConversationTurn.conversation_id == conversation_id)
-            .order_by(ConversationTurn.ordinal.asc())
+        (
+            await session.execute(
+                sa.select(ConversationTurn)
+                .where(ConversationTurn.conversation_id == conversation_id)
+                .order_by(ConversationTurn.ordinal.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 

@@ -30,8 +30,13 @@ async def test_append_increments_ordinal_and_history_tail(db_session: AsyncSessi
     convo = await convo_service.get_or_create_conversation(db_session, user.id, repo.id)
     for i in range(3):
         await convo_service.append_turn(
-            db_session, convo.id, question=f"q{i}", answer=f"a{i}",
-            not_in_vault=False, citations=[], sources=[],
+            db_session,
+            convo.id,
+            question=f"q{i}",
+            answer=f"a{i}",
+            not_in_vault=False,
+            citations=[],
+            sources=[],
         )
     turns = await convo_service.list_turns(db_session, convo.id)
     assert [t.ordinal for t in turns] == [0, 1, 2]
@@ -43,8 +48,13 @@ async def test_clear_removes_conversation_and_turns(db_session: AsyncSession) ->
     user, repo = await _seed(db_session)
     convo = await convo_service.get_or_create_conversation(db_session, user.id, repo.id)
     await convo_service.append_turn(
-        db_session, convo.id, question="q", answer="a",
-        not_in_vault=False, citations=[], sources=[],
+        db_session,
+        convo.id,
+        question="q",
+        answer="a",
+        not_in_vault=False,
+        citations=[],
+        sources=[],
     )
     await convo_service.clear_conversation(db_session, user.id, repo.id)
     convo_count = await db_session.execute(sa.select(sa.func.count()).select_from(Conversation))
