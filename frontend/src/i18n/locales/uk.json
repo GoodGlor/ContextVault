@@ -112,9 +112,10 @@
   "adminSources": {
     "title": "Джерела",
     "repositoryLabel": "Репозиторій",
-    "documentLabel": "Документ",
-    "ocrHint": "Зображення читаються за допомогою OCR — фіксується лише текст, видимий на зображенні.",
+    "documentLabel": "Документи",
+    "ocrHint": "Виберіть один або кілька файлів. Зображення читаються за допомогою OCR — фіксується лише текст, видимий на зображенні.",
     "uploadButton": "Завантажити",
+    "uploadButtonCount": "Завантажити файлів: {{n}}",
     "webLinkLabel": "Веб-посилання",
     "urlPlaceholder": "https://example.com/article",
     "addLinkButton": "Додати посилання",
@@ -130,6 +131,7 @@
     "errorLoadRepos": "Не вдалося завантажити репозиторії.",
     "errorLoadSources": "Не вдалося завантажити джерела.",
     "errorUpload": "Не вдалося завантажити.",
+    "errorUploadSome": "Не вдалося завантажити файлів: {{failed}} із {{total}}.",
     "errorAddLink": "Не вдалося додати посилання.",
     "errorDelete": "Не вдалося видалити джерело."
   },

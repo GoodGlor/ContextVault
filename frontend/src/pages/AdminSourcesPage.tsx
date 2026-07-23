@@ -29,7 +29,7 @@ export function AdminSourcesPage(): ReactNode {
   const [sources, setSources] = useState<Source[] | null>(null);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
 
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -89,24 +89,31 @@ export function AdminSourcesPage(): ReactNode {
   }, [sources, selected]);
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setFile(e.target.files?.[0] ?? null);
+    setFiles(Array.from(e.target.files ?? []));
   };
 
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
-    if (selected === "" || file === null) return;
+    if (selected === "" || files.length === 0) return;
     setUploading(true);
     setUploadError(null);
-    try {
-      const created = await uploadSource(selected, file);
-      setSources((prev) => [...(prev ?? []), created]);
-      setFile(null);
-      if (fileInput.current) fileInput.current.value = "";
-    } catch (err) {
-      setUploadError(errorMessage(err, t("adminSources.errorUpload")));
-    } finally {
-      setUploading(false);
+    // Upload every selected file independently; one failure must not sink the
+    // others, so settle them all and append the ones that succeeded.
+    const results = await Promise.allSettled(files.map((f) => uploadSource(selected, f)));
+    const created = results
+      .filter((r): r is PromiseFulfilledResult<Source> => r.status === "fulfilled")
+      .map((r) => r.value);
+    if (created.length > 0) {
+      setSources((prev) => [...(prev ?? []), ...created]);
     }
+    const failed = results.length - created.length;
+    if (failed > 0) {
+      setUploadError(t("adminSources.errorUploadSome", { failed, total: results.length }));
+    } else {
+      setFiles([]);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+    setUploading(false);
   };
 
   const onAddWeb = async (e: FormEvent) => {
@@ -169,13 +176,16 @@ export function AdminSourcesPage(): ReactNode {
         <input
           id="source-file"
           type="file"
+          multiple
           ref={fileInput}
           onChange={onFileChange}
           accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.tiff,.bmp,.heic,.heif"
         />
         <p className="form-hint">{t("adminSources.ocrHint")}</p>
-        <button type="submit" disabled={uploading || file === null}>
-          {t("adminSources.uploadButton")}
+        <button type="submit" disabled={uploading || files.length === 0}>
+          {files.length > 1
+            ? t("adminSources.uploadButtonCount", { n: files.length })
+            : t("adminSources.uploadButton")}
         </button>
         {uploadError !== null && <p className="error">{uploadError}</p>}
       </form>
