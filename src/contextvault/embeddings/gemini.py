@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from google.genai import types
 
+from contextvault.embeddings.base import EmbedTask
+
 if TYPE_CHECKING:
     from google import genai
-
-EmbedTask = Literal["document", "query"]
 
 # Gemini's asymmetric retrieval task types: documents and queries embed differently.
 _TASK_TYPES: dict[str, str] = {
@@ -64,12 +64,12 @@ class GeminiEmbeddingProvider:
     def embed(self, texts: Sequence[str], *, task: EmbedTask = "document") -> list[list[float]]:
         if not texts:
             return []
-        config = types.EmbedContentConfig(
-            task_type=_TASK_TYPES[task],
-            output_dimensionality=self._dimension,
-        )
         vectors: list[list[float]] = []
         try:
+            config = types.EmbedContentConfig(
+                task_type=_TASK_TYPES[task],
+                output_dimensionality=self._dimension,
+            )
             client = _genai_client(self._api_key)
             for start in range(0, len(texts), _BATCH_SIZE):
                 batch = list(texts[start : start + _BATCH_SIZE])
@@ -78,7 +78,15 @@ class GeminiEmbeddingProvider:
                     contents=batch,  # type: ignore[arg-type]
                     config=config,
                 )
-                vectors.extend(_l2_normalize(e.values or []) for e in response.embeddings or [])
+                embeddings = response.embeddings
+                if embeddings is None:
+                    raise EmbeddingError("Gemini returned no embeddings.")
+                for item in embeddings:
+                    if item.values is None:
+                        raise EmbeddingError("Gemini returned an empty embedding.")
+                    vectors.append(_l2_normalize(item.values))
+        except EmbeddingError:
+            raise
         except Exception as exc:  # noqa: BLE001 — any SDK/network failure becomes a clean error
             raise EmbeddingError(f"Could not embed text: {exc}") from exc
         return vectors

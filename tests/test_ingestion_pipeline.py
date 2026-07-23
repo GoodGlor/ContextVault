@@ -39,7 +39,7 @@ class FakeEmbedder:
     def dimension(self) -> int:
         return self._dimension
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed(self, texts: Sequence[str], *, task: str = "document") -> list[list[float]]:
         self.calls.append(list(texts))
         return [[0.1] * self._dimension for _ in texts]
 
@@ -51,7 +51,7 @@ class BoomEmbedder:
     def dimension(self) -> int:
         return get_settings().embedding_dim
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed(self, texts: Sequence[str], *, task: str = "document") -> list[list[float]]:
         raise RuntimeError("embed exploded")
 
 

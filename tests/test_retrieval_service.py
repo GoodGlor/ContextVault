@@ -36,7 +36,7 @@ class _FakeEmbedder:
     def dimension(self) -> int:
         return get_settings().embedding_dim
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed(self, texts: Sequence[str], *, task: str = "document") -> list[list[float]]:
         return [self._mapping[t] for t in texts]
 
 

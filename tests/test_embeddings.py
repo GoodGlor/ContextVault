@@ -5,6 +5,7 @@ touches torch or a real API key.
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
 
@@ -24,10 +25,12 @@ class _FakeResponse:
 
 
 class _FakeModels:
-    def __init__(self, recorder: dict) -> None:
+    def __init__(self, recorder: dict[str, Any]) -> None:
         self._recorder = recorder
 
-    def embed_content(self, *, model: str, contents: Sequence[str], config) -> _FakeResponse:
+    def embed_content(
+        self, *, model: str, contents: Sequence[str], config: Any
+    ) -> _FakeResponse:
         self._recorder.setdefault("calls", []).append(
             {"model": model, "contents": list(contents), "config": config}
         )
@@ -36,13 +39,13 @@ class _FakeModels:
 
 
 class _FakeClient:
-    def __init__(self, recorder: dict) -> None:
+    def __init__(self, recorder: dict[str, Any]) -> None:
         self.models = _FakeModels(recorder)
 
 
 @pytest.fixture
-def recorder(monkeypatch: pytest.MonkeyPatch) -> dict:
-    rec: dict = {}
+def recorder(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    rec: dict[str, Any] = {}
     monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _FakeClient(rec))
     return rec
 
@@ -55,7 +58,7 @@ def test_provider_satisfies_protocol() -> None:
     assert provider.dimension == 1024
 
 
-def test_embed_normalizes_vectors(recorder: dict) -> None:
+def test_embed_normalizes_vectors(recorder: dict[str, Any]) -> None:
     provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
     vectors = provider.embed(["hello", "привіт"])
     assert len(vectors) == 2
@@ -63,7 +66,7 @@ def test_embed_normalizes_vectors(recorder: dict) -> None:
     assert vectors[0] == pytest.approx([0.6, 0.0, 0.8])
 
 
-def test_embed_passes_dimension_and_document_task(recorder: dict) -> None:
+def test_embed_passes_dimension_and_document_task(recorder: dict[str, Any]) -> None:
     provider = GeminiEmbeddingProvider(
         api_key="k", model_name="gemini-embedding-001", dimension=1024
     )
@@ -74,13 +77,13 @@ def test_embed_passes_dimension_and_document_task(recorder: dict) -> None:
     assert recorder["calls"][0]["model"] == "gemini-embedding-001"
 
 
-def test_embed_query_task(recorder: dict) -> None:
+def test_embed_query_task(recorder: dict[str, Any]) -> None:
     provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
     provider.embed(["q"], task="query")
     assert recorder["calls"][0]["config"].task_type == "RETRIEVAL_QUERY"
 
 
-def test_embed_batches_and_preserves_order(recorder: dict) -> None:
+def test_embed_batches_and_preserves_order(recorder: dict[str, Any]) -> None:
     provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
     texts = [str(i) for i in range(250)]  # > 2 batches of 100
     vectors = provider.embed(texts)
@@ -89,7 +92,7 @@ def test_embed_batches_and_preserves_order(recorder: dict) -> None:
     assert [len(c["contents"]) for c in calls] == [100, 100, 50]
 
 
-def test_embed_empty_returns_empty(recorder: dict) -> None:
+def test_embed_empty_returns_empty(recorder: dict[str, Any]) -> None:
     provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
     assert provider.embed([]) == []
     assert "calls" not in recorder
@@ -98,10 +101,32 @@ def test_embed_empty_returns_empty(recorder: dict) -> None:
 def test_embed_wraps_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Boom:
         @property
-        def models(self):
+        def models(self) -> Any:
             raise RuntimeError("network down")
 
     monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _Boom())
     provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
     with pytest.raises(EmbeddingError, match="network down"):
+        provider.embed(["a"])
+
+
+def test_embed_wraps_unknown_task(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError):
+        provider.embed(["a"], task="bogus")  # type: ignore[arg-type]
+
+
+def test_embed_raises_when_gemini_returns_no_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _NoneModels:
+        def embed_content(
+            self, *, model: str, contents: Sequence[str], config: Any
+        ) -> _FakeResponse:
+            return _FakeResponse(None)  # type: ignore[arg-type]
+
+    class _NoneClient:
+        models = _NoneModels()
+
+    monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _NoneClient())
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError, match="no embeddings"):
         provider.embed(["a"])

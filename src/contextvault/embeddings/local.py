@@ -61,7 +61,7 @@ class LocalEmbeddingProvider:
             self._model = model
         return self._model
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed(self, texts: Sequence[str], *, task: str = "document") -> list[list[float]]:
         if not texts:
             return []
         # Serialize load + encode: only ever one thread inside the (non-thread-safe)
