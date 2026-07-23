@@ -61,8 +61,8 @@ async def retrieve(
     """
     threshold = min_score if min_score is not None else get_settings().retrieval_min_score
 
-    # ``embed`` is synchronous/CPU-bound (local model); keep the event loop free.
-    vectors = await asyncio.to_thread(embedder.embed, [question])
+    # ``embed`` is a synchronous network call; keep the event loop free.
+    vectors = await asyncio.to_thread(lambda: embedder.embed([question], task="query"))
     query_embedding = vectors[0]
 
     hits = await search_chunks(

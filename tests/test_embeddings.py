@@ -1,102 +1,146 @@
-"""Tests for the pluggable embedding layer.
+"""Tests for the Gemini-backed embedding provider.
 
-The unit tests substitute a fake model for the local sentence-transformers
-backend, so the suite runs without downloading a multi-gigabyte model (or even
-installing torch). The one test that loads the real model is opt-in, gated
-behind ``RUN_EMBEDDING_MODEL_TESTS`` so CI stays fast.
+A fake genai client stands in for the network, so the suite runs offline and never
+touches torch or a real API key.
 """
 
-import os
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
 
-import contextvault.embeddings.local as local_mod
-from contextvault.embeddings import get_embedding_provider
-from contextvault.embeddings.base import EmbeddingProvider
-from contextvault.embeddings.local import LocalEmbeddingProvider
+import contextvault.embeddings.gemini as gemini_mod
+from contextvault.embeddings import EmbeddingProvider, GeminiEmbeddingProvider
+from contextvault.embeddings.gemini import EmbeddingError
 
 
-class _FakeModel:
-    """Stand-in for ``sentence_transformers.SentenceTransformer``."""
+class _FakeEmbedding:
+    def __init__(self, values: list[float]) -> None:
+        self.values = values
 
-    def __init__(self, dim: int) -> None:
-        self._dim = dim
-        self.encode_calls: list[list[str]] = []
 
-    def get_sentence_embedding_dimension(self) -> int:
-        return self._dim
+class _FakeResponse:
+    def __init__(self, embeddings: list[_FakeEmbedding]) -> None:
+        self.embeddings = embeddings
 
-    def encode(self, texts: list[str], **kwargs: object) -> list[list[float]]:
-        self.encode_calls.append(texts)
-        # Deterministic vectors of the declared dimension, one row per input.
-        return [[float(i)] * self._dim for i, _ in enumerate(texts)]
+
+class _FakeModels:
+    def __init__(self, recorder: dict[str, Any]) -> None:
+        self._recorder = recorder
+
+    def embed_content(self, *, model: str, contents: Sequence[str], config: Any) -> _FakeResponse:
+        self._recorder.setdefault("calls", []).append(
+            {"model": model, "contents": list(contents), "config": config}
+        )
+        # Return one 3-vector per input, non-unit so normalization is observable.
+        return _FakeResponse([_FakeEmbedding([3.0, 0.0, 4.0]) for _ in contents])
+
+
+class _FakeClient:
+    def __init__(self, recorder: dict[str, Any]) -> None:
+        self.models = _FakeModels(recorder)
 
 
 @pytest.fixture
-def fake_model(monkeypatch: pytest.MonkeyPatch) -> _FakeModel:
-    model = _FakeModel(dim=8)
-    monkeypatch.setattr(local_mod, "_load_sentence_transformer", lambda name: model)
-    return model
+def recorder(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    rec: dict[str, Any] = {}
+    monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _FakeClient(rec))
+    return rec
 
 
-def test_local_provider_satisfies_protocol() -> None:
-    provider: EmbeddingProvider = LocalEmbeddingProvider(model_name="x", dimension=8)
+def test_provider_satisfies_protocol() -> None:
+    provider: EmbeddingProvider = GeminiEmbeddingProvider(
+        api_key="k", model_name="gemini-embedding-001", dimension=1024
+    )
     assert isinstance(provider, EmbeddingProvider)
+    assert provider.dimension == 1024
 
 
-def test_embed_returns_vectors_of_declared_dimension(fake_model: _FakeModel) -> None:
-    provider = LocalEmbeddingProvider(model_name="x", dimension=8)
-    vectors = provider.embed(["hello", "привіт", "здравствуй"])
-
-    assert provider.dimension == 8
-    assert len(vectors) == 3
-    assert all(len(v) == 8 for v in vectors)
-    assert all(isinstance(x, float) for v in vectors for x in v)
+def test_embed_normalizes_vectors(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    vectors = provider.embed(["hello", "привіт"])
+    assert len(vectors) == 2
+    # [3,0,4] has norm 5 → normalized to [0.6, 0, 0.8]
+    assert vectors[0] == pytest.approx([0.6, 0.0, 0.8])
 
 
-def test_embed_empty_input_does_not_load_model(fake_model: _FakeModel) -> None:
-    provider = LocalEmbeddingProvider(model_name="x", dimension=8)
-    assert provider.embed([]) == []
-    assert fake_model.encode_calls == []
-
-
-def test_model_loaded_once_and_cached(fake_model: _FakeModel) -> None:
-    provider = LocalEmbeddingProvider(model_name="x", dimension=8)
+def test_embed_passes_dimension_and_document_task(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(
+        api_key="k", model_name="gemini-embedding-001", dimension=1024
+    )
     provider.embed(["a"])
-    provider.embed(["b"])
-    # Two embed calls, but the fake model instance is reused (loaded once).
-    assert len(fake_model.encode_calls) == 2
+    config = recorder["calls"][0]["config"]
+    assert config.output_dimensionality == 1024
+    assert config.task_type == "RETRIEVAL_DOCUMENT"
+    assert recorder["calls"][0]["model"] == "gemini-embedding-001"
 
 
-def test_dimension_mismatch_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(local_mod, "_load_sentence_transformer", lambda name: _FakeModel(dim=384))
-    provider = LocalEmbeddingProvider(model_name="x", dimension=1024)
-    with pytest.raises(ValueError, match="384.*1024|1024.*384"):
+def test_embed_query_task(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    provider.embed(["q"], task="query")
+    assert recorder["calls"][0]["config"].task_type == "RETRIEVAL_QUERY"
+
+
+def test_embed_batches_and_preserves_order(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    texts = [str(i) for i in range(250)]  # > 2 batches of 100
+    vectors = provider.embed(texts)
+    assert len(vectors) == 250
+    calls = recorder["calls"]
+    assert [len(c["contents"]) for c in calls] == [100, 100, 50]
+
+
+def test_embed_empty_returns_empty(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    assert provider.embed([]) == []
+    assert "calls" not in recorder
+
+
+def test_embed_wraps_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Boom:
+        @property
+        def models(self) -> Any:
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _Boom())
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError, match="network down"):
         provider.embed(["a"])
 
 
-def test_get_embedding_provider_uses_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    get_embedding_provider.cache_clear()
-    provider = get_embedding_provider()
-    assert isinstance(provider, LocalEmbeddingProvider)
-    # Cached: same instance on repeat calls.
-    assert get_embedding_provider() is provider
-    get_embedding_provider.cache_clear()
+def test_embed_wraps_unknown_task(recorder: dict[str, Any]) -> None:
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError):
+        provider.embed(["a"], task="bogus")  # type: ignore[arg-type]
 
 
-@pytest.mark.skipif(
-    not os.getenv("RUN_EMBEDDING_MODEL_TESTS"),
-    reason="set RUN_EMBEDDING_MODEL_TESTS=1 to download and run the real model",
-)
-def test_real_local_model_embeds_multilingual() -> None:
-    from contextvault.core.config import get_settings
+def test_embed_raises_when_gemini_returns_no_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _NoneModels:
+        def embed_content(
+            self, *, model: str, contents: Sequence[str], config: Any
+        ) -> _FakeResponse:
+            return _FakeResponse(None)  # type: ignore[arg-type]
 
-    settings = get_settings()
-    provider = LocalEmbeddingProvider(
-        model_name=settings.embedding_model, dimension=settings.embedding_dim
-    )
-    texts: Sequence[str] = ["The cat sits on the mat.", "Кіт сидить на килимку."]
-    vectors = provider.embed(texts)
-    assert len(vectors) == 2
-    assert all(len(v) == settings.embedding_dim for v in vectors)
+    class _NoneClient:
+        models = _NoneModels()
+
+    monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _NoneClient())
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError, match="no embeddings"):
+        provider.embed(["a"])
+
+
+def test_embed_raises_when_embedding_has_no_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _NoValuesModels:
+        def embed_content(
+            self, *, model: str, contents: Sequence[str], config: Any
+        ) -> _FakeResponse:
+            return _FakeResponse([_FakeEmbedding(None)])  # type: ignore[arg-type]
+
+    class _NoValuesClient:
+        models = _NoValuesModels()
+
+    monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _NoValuesClient())
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError, match="empty embedding"):
+        provider.embed(["a"])

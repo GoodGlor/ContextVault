@@ -36,7 +36,7 @@ class FakeEmbedder:
     def dimension(self) -> int:
         return self._dimension
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed(self, texts: Sequence[str], *, task: str = "document") -> list[list[float]]:
         return [[0.1] * self._dimension for _ in texts]
 
 
@@ -395,3 +395,26 @@ async def test_add_web_source_forbidden_for_non_admin(
         headers=_auth(token),
     )
     assert resp.status_code == 403
+
+
+async def test_upload_without_gemini_key_returns_409(db_session: AsyncSession) -> None:
+    app = create_app()
+
+    async def _use_test_session() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = _use_test_session
+    app.dependency_overrides[get_ingestion_session_factory] = lambda: _fixed_factory(db_session)
+    # get_embedder intentionally NOT overridden — exercise the real 409 path.
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        token = await _token(c, db_session, Role.ADMIN)
+        repo = await _repo(db_session)
+        resp = await c.post(
+            f"/repositories/{repo.id}/sources",
+            headers=_auth(token),
+            files={"file": ("doc.txt", b"hello world", "text/plain")},
+        )
+    assert resp.status_code == 409
+    assert "Gemini" in resp.json()["detail"]

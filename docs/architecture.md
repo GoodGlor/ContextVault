@@ -168,13 +168,19 @@ repo-config card; this card provides the primitive.
 
 ## Embeddings
 
-Text is embedded through a pluggable `EmbeddingProvider`. v1 ships one local, free
-implementation backed by a multilingual sentence-transformers model, so document
-text never leaves the server. The default is
-[`BAAI/bge-m3`](https://huggingface.co/BAAI/bge-m3) (multilingual, 1024-dim).
+Text is embedded through a pluggable `EmbeddingProvider`. The shipped implementation,
+`GeminiEmbeddingProvider`, calls Google's Gemini embedding API
+(`gemini-embedding-001`, multilingual, 1024-dim via `output_dimensionality`) instead of
+running a model locally — document and query text is sent to the configured Gemini
+provider (consistent with how image OCR already sends content to the provider). It
+uses Gemini's asymmetric task types (`RETRIEVAL_DOCUMENT` for ingested text,
+`RETRIEVAL_QUERY` for questions) and L2-normalizes the returned vectors so retrieval's
+cosine similarity is a plain dot product. Embeddings are global — one vector space for
+every repository — so a verified global Gemini provider key is required; ingestion and
+query both fail fast (409) without one.
 
 Swapping the model is a config change via `EMBEDDING_MODEL` and `EMBEDDING_DIM` —
-the two must match the model's output width and the pgvector column.
+the two must match the model's requested output width and the pgvector column.
 
 ## Document parsing
 
@@ -342,20 +348,30 @@ runs `search_chunks`, then keeps only hits whose cosine similarity clears a
 setting). Filtering weak matches is what makes the honest "not in this vault"
 answer and the knowledge-gap dashboard possible (design spec §4/§5).
 
+The embedder is resolved per-request by the `get_embedder` FastAPI dependency, which
+reads the global Gemini key from the database and raises `409` if none is configured
+(there is no standalone factory to call outside a request):
+
 ```python
-from contextvault.embeddings import get_embedding_provider
+from fastapi import Depends
+from contextvault.api.deps import get_embedder
+from contextvault.embeddings import EmbeddingProvider
 from contextvault.retrieval import retrieve
 
-result = await retrieve(
-    session,
-    question="How do I rotate the signing key?",
-    repository_id=repo.id,
-    user_id=user.id,
-    embedder=get_embedding_provider(),
-)
-result.chunks          # relevant hits, ranked closest first (empty → "not in this vault")
-result.has_results     # True when at least one chunk cleared the threshold
-result.top_score       # best similarity among *retrievable* chunks, or None
+async def ask(
+    ...,
+    embedder: EmbeddingProvider = Depends(get_embedder),
+):
+    result = await retrieve(
+        session,
+        question="How do I rotate the signing key?",
+        repository_id=repo.id,
+        user_id=user.id,
+        embedder=embedder,
+    )
+    result.chunks          # relevant hits, ranked closest first (empty → "not in this vault")
+    result.has_results     # True when at least one chunk cleared the threshold
+    result.top_score       # best similarity among *retrievable* chunks, or None
 ```
 
 `top_score` distinguishes a **knowledge gap** (chunks exist but none relevant

@@ -26,15 +26,15 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://contextvault:contextvault@localhost:5432/contextvault"
     secret_key: str = "change-me-in-production"
 
-    # Local embedding model (sentence-transformers). bge-m3 is multilingual
-    # (handles Russian/Ukrainian + English) and needs no query/passage prefixes,
-    # so it fits the generic ``embed(texts)`` interface directly. Swapping to the
-    # multilingual-e5 family is a config change — see the README embeddings note.
-    embedding_model: str = "BAAI/bge-m3"
+    # Embedding model, served by Google's Gemini embedding API (no local model
+    # runs on the host). Handles Russian/Ukrainian + English via the asymmetric
+    # ``task_type`` (document vs. query) the provider passes per call.
+    embedding_model: str = "gemini-embedding-001"
 
-    # Dimension of the pgvector embedding column. Must match ``embedding_model``'s
-    # output width (bge-m3 and multilingual-e5-large are both 1024-dim); changing
-    # it requires a re-embed and a schema migration.
+    # Dimension of the pgvector embedding column. Gemini is asked for this width
+    # via ``output_dimensionality`` on every call, so it need not match the
+    # model's native output size; changing it still requires a re-embed and a
+    # schema migration.
     embedding_dim: int = 1024
 
     # Chunking (ingestion `chunk` stage). Character-based windows sized for
@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     # count as relevant. Hits below this are dropped, so a query that finds only
     # weak matches yields no chunks — the signal behind the honest "not in this
     # vault" answer and the knowledge-gap dashboard (design spec §4/§5). Tune per
-    # embedding model; higher is stricter. bge-m3 relevant matches sit well above
-    # this conservative default.
+    # embedding model; higher is stricter. This is a conservative default carried
+    # over from the previous local model; Gemini's embedding distribution may
+    # warrant re-tuning.
     retrieval_min_score: float = 0.3
 
     # Generation (RAG loop). ``llm_provider`` selects the system-default LLM
