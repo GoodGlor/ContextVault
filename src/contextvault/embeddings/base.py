@@ -20,6 +20,10 @@ class EmbeddingProvider(Protocol):
         """Length of every vector this provider returns."""
         ...
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        """Embed ``texts`` into vectors, one per input, each of ``dimension``."""
+    def embed(self, texts: Sequence[str], *, task: str = "document") -> list[list[float]]:
+        """Embed ``texts`` into vectors, one per input, each of ``dimension``.
+
+        ``task`` is ``"document"`` for stored content and ``"query"`` for a search
+        query — providers that support asymmetric retrieval embeddings use it.
+        """
         ...

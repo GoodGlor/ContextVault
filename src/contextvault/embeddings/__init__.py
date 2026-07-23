@@ -8,9 +8,15 @@ from functools import lru_cache
 
 from contextvault.core.config import get_settings
 from contextvault.embeddings.base import EmbeddingProvider
+from contextvault.embeddings.gemini import GeminiEmbeddingProvider
 from contextvault.embeddings.local import LocalEmbeddingProvider
 
-__all__ = ["EmbeddingProvider", "LocalEmbeddingProvider", "get_embedding_provider"]
+__all__ = [
+    "EmbeddingProvider",
+    "GeminiEmbeddingProvider",
+    "LocalEmbeddingProvider",
+    "get_embedding_provider",
+]
 
 
 @lru_cache

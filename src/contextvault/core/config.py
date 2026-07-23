@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # (handles Russian/Ukrainian + English) and needs no query/passage prefixes,
     # so it fits the generic ``embed(texts)`` interface directly. Swapping to the
     # multilingual-e5 family is a config change — see the README embeddings note.
-    embedding_model: str = "BAAI/bge-m3"
+    embedding_model: str = "gemini-embedding-001"
 
     # Dimension of the pgvector embedding column. Must match ``embedding_model``'s
     # output width (bge-m3 and multilingual-e5-large are both 1024-dim); changing
