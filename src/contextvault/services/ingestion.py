@@ -112,7 +112,8 @@ async def store_parsed(
     """
     chunks = chunk_document(parsed)  # type: ignore[arg-type]
     # Embedding may be slow and is synchronous; run it off the event loop.
-    vectors = await asyncio.to_thread(embedder.embed, [c.text for c in chunks])
+    texts = [c.text for c in chunks]
+    vectors = await asyncio.to_thread(lambda: embedder.embed(texts, task="document"))
 
     # Idempotent re-ingest: drop any chunks from a previous run first.
     await session.execute(sa.delete(Chunk).where(Chunk.source_id == source.id))
