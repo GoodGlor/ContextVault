@@ -7,7 +7,10 @@ behind ``RUN_EMBEDDING_MODEL_TESTS`` so CI stays fast.
 """
 
 import os
+import threading
+import time
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -67,6 +70,63 @@ def test_model_loaded_once_and_cached(fake_model: _FakeModel) -> None:
     provider.embed(["b"])
     # Two embed calls, but the fake model instance is reused (loaded once).
     assert len(fake_model.encode_calls) == 2
+
+
+class _ConcurrencyProbeModel:
+    """A fake model that records the peak number of threads inside it at once.
+
+    ``sentence-transformers``/torch — especially the Apple-Silicon MPS backend — is
+    not thread-safe, and concurrent forward passes segfault the process. This model
+    stands in for that shared resource: if the provider ever lets two threads into
+    ``encode`` (or the lazy load) simultaneously, ``peak`` climbs above 1.
+    """
+
+    def __init__(self, dim: int) -> None:
+        self._dim = dim
+        self._counter_lock = threading.Lock()
+        self.current = 0
+        self.peak = 0
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
+
+    def encode(self, texts: list[str], **kwargs: object) -> list[list[float]]:
+        with self._counter_lock:
+            self.current += 1
+            self.peak = max(self.peak, self.current)
+        try:
+            time.sleep(0.02)  # widen the window so a real race is observed
+            return [[0.0] * self._dim for _ in texts]
+        finally:
+            with self._counter_lock:
+                self.current -= 1
+
+
+def test_embed_serializes_concurrent_model_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression for the Metal/MPS segfault + reboot under bulk image upload.
+
+    Bulk uploads fan out into many ``asyncio.to_thread(embed, ...)`` calls, so the one
+    shared model is hit by several worker threads at once. The non-thread-safe torch/MPS
+    backend then crashes the whole process (and can reboot the machine). The provider
+    must serialize every model touch so only one thread is ever inside ``encode``.
+    """
+    probe = _ConcurrencyProbeModel(dim=8)
+    load_count = {"n": 0}
+
+    def fake_load(name: str) -> _ConcurrencyProbeModel:
+        load_count["n"] += 1
+        return probe
+
+    monkeypatch.setattr(local_mod, "_load_sentence_transformer", fake_load)
+    provider = LocalEmbeddingProvider(model_name="x", dimension=8)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(provider.embed, ["a", "b"]) for _ in range(8)]
+        for future in futures:
+            future.result()
+
+    assert probe.peak == 1, f"model was entered by {probe.peak} threads at once (not thread-safe)"
+    assert load_count["n"] == 1, "the lazy model load raced into multiple concurrent loads"
 
 
 def test_dimension_mismatch_raises(monkeypatch: pytest.MonkeyPatch) -> None:

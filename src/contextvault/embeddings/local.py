@@ -8,6 +8,7 @@ loading is isolated behind ``_load_sentence_transformer`` so the heavy import
 substitute a fake without installing it.
 """
 
+import threading
 from collections.abc import Sequence
 from typing import Any
 
@@ -27,6 +28,16 @@ class LocalEmbeddingProvider:
     when the model first loads so a misconfiguration fails loudly rather than
     silently writing wrong-width vectors.
     """
+
+    # sentence-transformers/torch is not thread-safe — the Apple-Silicon MPS (Metal
+    # GPU) backend especially: concurrent forward passes corrupt the shared GPU command
+    # stream and segfault the process, which can fault the driver hard enough to reboot
+    # the machine. Bulk ingestion fans out into many ``asyncio.to_thread(embed, ...)``
+    # calls at once, and a query can embed at the same time, so every touch of the model
+    # — the lazy load and each ``encode`` — is serialized. The lock is class-level
+    # because the unsafe resource is the one torch/MPS runtime per process, not any
+    # single provider instance: two providers would still collide on the same GPU.
+    _model_lock = threading.Lock()
 
     def __init__(self, *, model_name: str, dimension: int) -> None:
         self._model_name = model_name
@@ -53,11 +64,15 @@ class LocalEmbeddingProvider:
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
-        model = self._get_model()
-        # Normalize so cosine similarity reduces to a dot product downstream.
-        vectors = model.encode(
-            list(texts),
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )
+        # Serialize load + encode: only ever one thread inside the (non-thread-safe)
+        # torch/MPS model at a time. Callers run this off the event loop via
+        # ``asyncio.to_thread``, so the wait is borne by worker threads, not the loop.
+        with self._model_lock:
+            model = self._get_model()
+            # Normalize so cosine similarity reduces to a dot product downstream.
+            vectors = model.encode(
+                list(texts),
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+            )
         return [[float(value) for value in row] for row in vectors]

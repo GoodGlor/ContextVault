@@ -8,13 +8,23 @@ vector per text of the configured width — so the suite stays fast and offline.
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.core.config import get_settings
-from contextvault.models import Chunk, Repository, Source, SourceKind, SourceStatus
+from contextvault.core.crypto import encrypt
+from contextvault.models import (
+    Chunk,
+    LLMProviderName,
+    ProviderSetting,
+    Repository,
+    Source,
+    SourceKind,
+    SourceStatus,
+)
 from contextvault.services.ingestion import ingest_source, run_ingestion, run_web_ingestion
 
 
@@ -107,6 +117,66 @@ async def test_ingest_populates_chunks_and_marks_done(db_session: AsyncSession) 
         assert len(list(chunk.embedding)) == embedder.dimension
         # Offsets slice the chunk text back out of the source — citation-ready.
         assert text[chunk.char_start : chunk.char_end] == chunk.content
+
+
+async def _make_answerable_image_source(session: AsyncSession) -> Source:
+    """A repo with a verified provider key and model, plus a pending image source."""
+    repo = Repository(
+        name="Vault",
+        llm_provider=LLMProviderName.ANTHROPIC,
+        llm_model="claude-x",
+    )
+    session.add(repo)
+    session.add(
+        ProviderSetting(
+            provider=LLMProviderName.ANTHROPIC,
+            api_key_encrypted=encrypt("secret-key"),
+            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    await session.flush()
+    source = Source(
+        repository_id=repo.id,
+        kind=SourceKind.IMAGE,
+        title="photo.heic",
+        original_filename="photo.heic",
+    )
+    session.add(source)
+    await session.flush()
+    return source
+
+
+async def test_image_ocr_releases_db_connection_during_transcription(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Image OCR must not pin a pooled DB connection across the slow vision call.
+
+    Regression for the QueuePool exhaustion under bulk image upload: ``_ocr_image``
+    used to hold the read transaction opened while loading the repo/key open across
+    ``transcribe_image``, so N concurrent image ingestions pinned N connections for
+    the whole OCR + embed. The connection must be released before the slow call.
+    """
+    source = await _make_answerable_image_source(db_session)
+
+    in_transaction_during_ocr: dict[str, bool] = {}
+
+    async def fake_transcribe(
+        provider: str, api_key: str, model: str, *, image: bytes, base_url: str | None = None
+    ) -> str:
+        in_transaction_during_ocr["value"] = db_session.in_transaction()
+        return "transcribed page text"
+
+    monkeypatch.setattr("contextvault.services.ingestion.transcribe_image", fake_transcribe)
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await ingest_source(
+        db_session, source, filename="photo.heic", data=b"rawimagebytes", embedder=embedder
+    )
+
+    assert source.status is SourceStatus.DONE
+    assert in_transaction_during_ocr.get("value") is False, (
+        "the DB connection must be released before the slow OCR call, not held across it"
+    )
 
 
 async def test_embedding_failure_is_recorded(db_session: AsyncSession) -> None:

@@ -84,9 +84,16 @@ async def _ocr_image(session: AsyncSession, source: Source, data: bytes) -> Pars
             "provider has a verified API key, then re-upload."
         )
     assert repo.llm_provider is not None and repo.llm_model is not None
+    provider, model = repo.llm_provider.value, repo.llm_model
     key = await provider_service.get_provider_key(session, repo.llm_provider)
     assert key is not None
-    text = await transcribe_image(repo.llm_provider.value, key, repo.llm_model, image=data)
+    # Release the pooled DB connection before the slow vision call: loading the repo
+    # and key opened a read transaction that would otherwise stay pinned across the
+    # whole OCR (and the embed that follows), so bulk image uploads exhaust the pool
+    # and every other request times out (QueuePool limit reached). ``expire_on_commit``
+    # is off, so ``source``/``repo`` stay usable afterward.
+    await session.commit()
+    text = await transcribe_image(provider, key, model, image=data)
     if not text.strip():
         raise ValueError("No text found in image.")
     return parsed_from_text(text)
