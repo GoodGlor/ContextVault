@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-23 (multi-file upload; chat+memory in flight)
+- **Last updated:** 2026-07-23 (multi-file upload + chat-with-memory shipped)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -37,9 +37,9 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | Multi-file upload, squash-merged; before it model-picker/green-CI/env cleanup (#105), #104, #103 |
-| Last merged PR | multi-file upload; before it #105 (model-picker/CI/env), #104 (copy invite-link), #103 (i18n) |
-| In flight | **chat + memory** on the query page (frontend + backend) — see *Done recently* |
+| `main` HEAD | Chat + memory on the query page, squash-merged; before it multi-file upload (#106), #105, #104 |
+| Last merged PR | chat + memory (query page); before it #106 (multi-file upload), #105 (model-picker/CI/env), #104 (copy invite-link) |
+| In flight | none |
 | CI | **green** (was red #101–#104: prettier + a masked `vite.config.ts` typecheck error) |
 
 **Clean state.** Working tree clean; `main` even with `origin/main`. The invite-copy PR
@@ -59,16 +59,21 @@ successes append, failures summarised). Each file already becomes its own backgr
 source, so **no backend change**. Labels/button reflect the count ("Upload N files"); EN + UK
 strings added; e2e `sources.spec.ts` label updated ("Document" → "Documents"). Frontend only.
 
-### Chat + memory on the query page — IN FLIGHT (next)
+### Chat + memory on the query page — squash-merged
 
-User asked for the query UX to "look like a chat conversation, not Q&A", and chose the
-**chat + memory** scope: a real chat UI (user/assistant bubbles, bottom composer, auto-scroll)
-**plus** conversational memory so follow-ups carry context. Backend: `QueryRequest` gains an
-optional bounded `history`; `LLMProvider.answer` + shared `build_user_message` render a
-"Conversation so far" preamble; `SYSTEM_PROMPT` gains a line (use history only to interpret the
-question — still answer ONLY from numbered sources, prior answers are context not sources);
-retrieval contextualised by prepending the previous question for embedding only. Frontend:
-redesign `QueryPage` into chat, send running `history`, fresh conversation on repo change.
+The query page was one-shot Q&A; now it's a real chat **with memory** (user chose the
+"chat + memory" scope over visual-only). Frontend: `QueryPage` renders question/answer as
+right/left bubbles with a bottom composer (Enter sends, Shift+Enter newline), auto-scroll,
+and a "thinking" placeholder; each ask sends the running `history`; switching repository
+starts a fresh conversation. `QueryTurn` now renders the two bubbles (its citation→source
+highlight + passage view unchanged). Backend: `QueryRequest` gains an optional bounded
+`history` (`MAX_HISTORY_TURNS = 10`); `LLMProvider.answer` + shared `build_user_message`
+thread it into a "Conversation so far" preamble; `SYSTEM_PROMPT` gains a line — use history
+only to interpret the question, answer ONLY from numbered sources, never treat a prior answer
+as a source. Retrieval is contextualised for terse follow-ups by prepending the previous
+question to the embedding query (answered/logged question stays raw). EN + UK strings added.
+Tests: backend 340✓ (citations + query-api history threading), frontend 63✓ (follow-up sends
+history, repo change clears it), e2e 2✓.
 
 ### Model-picker UX + green CI + drop dead provider-key env fallbacks — squash-merged
 
