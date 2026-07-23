@@ -35,20 +35,28 @@ export function QueryTurn({
 
   return (
     <div className="turn">
-      <p className="turn-question">{question}</p>
-      {result.not_in_vault && (
-        <p className="not-in-vault" role="status">
-          {t("queryTurn.notInVault")}
-        </p>
-      )}
-      <AnswerText text={result.answer} citations={result.citations} onCite={onCite} />
-      <SourceList
-        sources={result.sources}
-        citations={result.citations}
-        highlightedId={highlightedId}
-        registerRef={registerRef}
-        repositoryId={repositoryId}
-      />
+      {/* The user's question, as a chat bubble aligned to the right. */}
+      <div className="msg-row user">
+        <div className="bubble">{question}</div>
+      </div>
+      {/* The assistant's grounded answer + its sources, aligned to the left. */}
+      <div className="msg-row assistant">
+        <div className="bubble">
+          {result.not_in_vault && (
+            <p className="not-in-vault" role="status">
+              {t("queryTurn.notInVault")}
+            </p>
+          )}
+          <AnswerText text={result.answer} citations={result.citations} onCite={onCite} />
+          <SourceList
+            sources={result.sources}
+            citations={result.citations}
+            highlightedId={highlightedId}
+            registerRef={registerRef}
+            repositoryId={repositoryId}
+          />
+        </div>
+      </div>
     </div>
   );
 }

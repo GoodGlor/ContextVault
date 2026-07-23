@@ -47,7 +47,12 @@ class FakeEmbedder:
 class RecordingProvider:
     """Grounded cited answer on the first chunk; honest not-in-vault when none."""
 
-    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[tuple[str, str]] = (),
+    ) -> Answer:
         if not chunks:
             return not_in_vault_answer()
         first = chunks[0]

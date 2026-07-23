@@ -57,12 +57,18 @@ class OpenAILLMProvider:
         self._max_tokens = max_tokens or settings.llm_max_tokens
         self._client = client or AsyncOpenAI(api_key=api_key)
 
-    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[tuple[str, str]] = (),
+    ) -> Answer:
         """Generate a grounded, cited answer to ``question`` from ``chunks``.
 
         With no chunks, returns the honest "not in this vault" answer without an
         API call. Otherwise numbers the chunks, asks the model to answer only from
         them, and resolves the ``[n]`` markers in the reply to ``Citation``s.
+        ``history`` (prior turns) is passed as conversation context only.
         """
         if not chunks:
             return not_in_vault_answer()
@@ -72,7 +78,7 @@ class OpenAILLMProvider:
             max_tokens=self._max_tokens,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_user_message(question, chunks)},
+                {"role": "user", "content": build_user_message(question, chunks, history)},
             ],
         )
         # ``message.content`` is None when the model returned no text (e.g. a

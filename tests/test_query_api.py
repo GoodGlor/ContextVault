@@ -59,9 +59,16 @@ class RecordingProvider:
 
     def __init__(self) -> None:
         self.received: list[RetrievedChunk] | None = None
+        self.received_history: list[tuple[str, str]] | None = None
 
-    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[tuple[str, str]] = (),
+    ) -> Answer:
         self.received = list(chunks)
+        self.received_history = list(history)
         if not chunks:
             return not_in_vault_answer()
         first = chunks[0]
@@ -278,6 +285,53 @@ async def test_query_returns_grounded_cited_answer(
     # The provider was grounded on the retrieved chunks, not the raw question.
     assert provider.received is not None
     assert len(provider.received) >= 1
+
+
+async def test_query_threads_conversation_history_to_the_provider(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # A follow-up question carries prior turns; the endpoint forwards them to the
+    # provider as (question, answer) context so references can resolve.
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "admin2")
+    admin_token = await _token(client, "admin2")
+    await _upload(client, repo.id, admin_token, b"Part-timers accrue pro-rated leave.")
+
+    user = await _user(db_session, Role.USER, "reader2")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "reader2")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={
+            "question": "and for part-timers?",
+            "history": [{"question": "What is the PTO policy?", "answer": "20 days [1]."}],
+        },
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert provider.received_history == [("What is the PTO policy?", "20 days [1].")]
+
+
+async def test_query_without_history_passes_the_provider_an_empty_conversation(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "admin3")
+    admin_token = await _token(client, "admin3")
+    await _upload(client, repo.id, admin_token, b"The vault stores curated policy documents.")
+
+    user = await _user(db_session, Role.USER, "reader3")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "reader3")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What does the vault store?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert provider.received_history == []
 
 
 async def test_query_not_in_vault_when_no_relevant_chunks(
