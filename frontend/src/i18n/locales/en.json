@@ -57,7 +57,8 @@
     "asking": "Thinking…",
     "ask": "Ask",
     "send": "Send",
-    "failedRepos": "Failed to load repositories."
+    "failedRepos": "Failed to load repositories.",
+    "clearConversation": "Clear conversation"
   },
   "queryTurn": {
     "notInVault": "Not in this vault — no grounded answer was found for this question."
@@ -107,7 +108,15 @@
     "userQueryCount_one": "{{count}} query",
     "userQueryCount_other": "{{count}} queries",
     "byDay": "By day",
-    "byDayRow": "{{day}}: {{total}} total, {{gaps}} gaps"
+    "byDayRow": "{{day}}: {{total}} total, {{gaps}} gaps",
+    "rejectGap": "Reject",
+    "rejectReason": "Reason for rejecting",
+    "rejectReasonPlaceholder": "Explain why this gap won't be answered…",
+    "confirmReject": "Confirm rejection",
+    "rejectedGaps": "Rejected gaps",
+    "rejectedBy": "rejected by {{admin}} · {{date}}",
+    "noRejectedGaps": "No rejected gaps.",
+    "errorRejectGap": "Could not reject the gap."
   },
   "adminSources": {
     "title": "Sources",

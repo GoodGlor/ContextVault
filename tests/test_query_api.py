@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ from contextvault.llm.base import Answer, Citation
 from contextvault.llm.citations import NOT_IN_VAULT, not_in_vault_answer
 from contextvault.main import create_app
 from contextvault.models import (
+    ConversationTurn,
     Grant,
     LLMProviderName,
     ProviderSetting,
@@ -304,8 +306,9 @@ async def test_query_returns_grounded_cited_answer(
 async def test_query_threads_conversation_history_to_the_provider(
     db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
 ) -> None:
-    # A follow-up question carries prior turns; the endpoint forwards them to the
-    # provider as (question, answer) context so references can resolve.
+    # A follow-up question is threaded with the prior turn's history — but that
+    # history is server-authoritative: it comes from the DB-saved conversation
+    # (populated by the first query), never from the request body.
     repo = await _repo(db_session)
     await _user(db_session, Role.ADMIN, "admin2")
     admin_token = await _token(client, "admin2")
@@ -315,16 +318,114 @@ async def test_query_threads_conversation_history_to_the_provider(
     await _grant(db_session, user.id, repo.id)
     token = await _token(client, "reader2")
 
+    first = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What is the PTO policy?"},
+        headers=_auth(token),
+    )
+    assert first.status_code == 200
+    first_answer = first.json()["answer"]
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "and for part-timers?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert provider.received_history == [("What is the PTO policy?", first_answer)]
+
+
+async def test_query_history_field_in_request_body_is_ignored(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # `history` is no longer part of the request schema; a client that still sends
+    # one gets neither a validation error nor any effect — the server-loaded
+    # (empty, for a first turn) history is what the provider actually receives.
+    repo = await _repo(db_session)
+    user = await _user(db_session, Role.USER, "reader2b")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "reader2b")
+
     resp = await client.post(
         f"/repositories/{repo.id}/query",
         json={
-            "question": "and for part-timers?",
-            "history": [{"question": "What is the PTO policy?", "answer": "20 days [1]."}],
+            "question": "What does the vault store?",
+            "history": [{"question": "spoofed?", "answer": "spoofed!"}],
         },
         headers=_auth(token),
     )
     assert resp.status_code == 200
-    assert provider.received_history == [("What is the PTO policy?", "20 days [1].")]
+    assert provider.received_history == []
+
+
+async def test_query_persists_a_turn(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "admin2c")
+    admin_token = await _token(client, "admin2c")
+    await _upload(client, repo.id, admin_token, b"The vault stores curated policy documents.")
+
+    user = await _user(db_session, Role.USER, "reader2c")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "reader2c")
+
+    resp = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What is the VPN?"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    turns = (await db_session.execute(sa.select(ConversationTurn))).scalars().all()
+    assert len(turns) == 1
+    turn = turns[0]
+    assert turn.question == "What is the VPN?"
+    assert turn.answer == body["answer"]
+    assert turn.not_in_vault == body["not_in_vault"]
+    assert turn.citations == body["citations"]
+    assert turn.sources == body["sources"]
+
+
+async def test_second_query_uses_db_history_not_client(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # The first question creates a turn; the second must receive that turn as
+    # history even though neither request body carries a `history` field.
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "admin2d")
+    admin_token = await _token(client, "admin2d")
+    await _upload(client, repo.id, admin_token, b"The vault stores curated policy documents.")
+
+    user = await _user(db_session, Role.USER, "reader2d")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "reader2d")
+
+    first = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "First?"},
+        headers=_auth(token),
+    )
+    assert first.status_code == 200
+    first_answer = first.json()["answer"]
+
+    second = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "Second?"},
+        headers=_auth(token),
+    )
+    assert second.status_code == 200
+    assert provider.received_history == [("First?", first_answer)]
+
+    turns = (
+        (await db_session.execute(sa.select(ConversationTurn).order_by(ConversationTurn.ordinal)))
+        .scalars()
+        .all()
+    )
+    assert len(turns) == 2
+    assert turns[0].question == "First?"
+    assert turns[1].question == "Second?"
 
 
 async def test_query_without_history_passes_the_provider_an_empty_conversation(
@@ -370,6 +471,46 @@ async def test_query_not_in_vault_when_no_relevant_chunks(
     assert body["citations"] == []
     assert body["sources"] == []
     assert provider.received == []
+
+
+async def test_not_in_vault_turn_persists_and_replays_as_history(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # A refusal is still a turn: it must be persisted (not_in_vault=True) and,
+    # on the next question, replayed to the provider as prior history — the
+    # admin's honest "not in this vault" is part of the conversation too.
+    repo = await _repo(db_session)
+    user = await _user(db_session, Role.USER, "emptyvault2")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "emptyvault2")
+
+    first = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What is not here?"},
+        headers=_auth(token),
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["not_in_vault"] is True
+    first_answer = first_body["answer"]
+
+    turns = (
+        (await db_session.execute(sa.select(ConversationTurn).order_by(ConversationTurn.ordinal)))
+        .scalars()
+        .all()
+    )
+    assert len(turns) == 1
+    assert turns[0].question == "What is not here?"
+    assert turns[0].answer == first_answer
+    assert turns[0].not_in_vault is True
+
+    second = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "Anything else?"},
+        headers=_auth(token),
+    )
+    assert second.status_code == 200
+    assert provider.received_history == [("What is not here?", first_answer)]
 
 
 async def test_query_rejects_unconfigured_repository(

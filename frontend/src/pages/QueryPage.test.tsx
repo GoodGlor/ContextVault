@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryPage } from "./QueryPage";
 import type { QueryResult } from "../api/query";
 import type { Repository } from "../api/repositories";
+import type { SavedConversation } from "../api/conversations";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -52,9 +53,17 @@ describe("QueryPage", () => {
     vi.unstubAllGlobals();
   });
 
-  function mock(repos: Repository[], result?: QueryResult) {
-    fetchMock.mockImplementation((url: string) => {
+  function mock(
+    repos: Repository[],
+    result?: QueryResult,
+    conversation: SavedConversation = { turns: [] },
+  ) {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes("/query")) return Promise.resolve(json(result ?? CITED));
+      if (url.includes("/conversation")) {
+        if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+        return Promise.resolve(json(conversation));
+      }
       if (url.endsWith("/repositories")) return Promise.resolve(json(repos));
       throw new Error(`unexpected fetch ${url}`);
     });
@@ -87,7 +96,7 @@ describe("QueryPage", () => {
     expect(String(posted?.[0])).toContain("/repositories/r-1/query");
   });
 
-  it("sends the running conversation history on a follow-up question", async () => {
+  it("sends only the question — the backend resolves conversation history server-side", async () => {
     mock(REPOS);
     render(<QueryPage />);
     await screen.findByLabelText("Repository");
@@ -103,14 +112,11 @@ describe("QueryPage", () => {
 
     const queryCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes("/query"));
     expect(queryCalls).toHaveLength(2);
-    // The first request carries no history; the follow-up carries the prior turn.
     expect(JSON.parse(String(queryCalls[0][1]?.body))).toEqual({
       question: "What is the PTO policy?",
-      history: [],
     });
     expect(JSON.parse(String(queryCalls[1][1]?.body))).toEqual({
       question: "and for part-timers?",
-      history: [{ question: "What is the PTO policy?", answer: CITED.answer }],
     });
   });
 
@@ -123,19 +129,58 @@ describe("QueryPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText(/Retention is 30 days/);
 
-    // Switching repositories clears the transcript...
+    // Switching repositories loads that repository's own saved conversation
+    // (empty here), replacing the prior repo's transcript...
     await userEvent.selectOptions(picker, "r-2");
-    expect(screen.queryByText(/Retention is 30 days/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/Retention is 30 days/)).not.toBeInTheDocument();
+    });
 
-    // ...so the next question is sent with no carried-over history.
+    // ...so the next question carries no history in the request body.
     await userEvent.type(screen.getByLabelText("Question"), "fresh start?");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     const lastQuery = fetchMock.mock.calls.filter((c) => String(c[0]).includes("/query")).at(-1);
     expect(String(lastQuery?.[0])).toContain("/repositories/r-2/query");
     expect(JSON.parse(String(lastQuery?.[1]?.body))).toEqual({
       question: "fresh start?",
-      history: [],
     });
+  });
+
+  it("restores the saved conversation on load", async () => {
+    mock(REPOS, undefined, {
+      turns: [
+        {
+          question: "Saved question?",
+          answer: "This is the saved answer from a prior session.",
+          not_in_vault: false,
+          citations: [],
+          sources: [],
+        },
+      ],
+    });
+    render(<QueryPage />);
+    expect(await screen.findByText("Saved question?")).toBeInTheDocument();
+    expect(screen.getByText(/saved answer/i)).toBeInTheDocument();
+  });
+
+  it("clears the conversation when Clear is clicked", async () => {
+    mock(REPOS, undefined, {
+      turns: [
+        {
+          question: "Saved question?",
+          answer: "This is the saved answer from a prior session.",
+          not_in_vault: false,
+          citations: [],
+          sources: [],
+        },
+      ],
+    });
+    render(<QueryPage />);
+    await screen.findByText("Saved question?");
+    await userEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
+    expect(screen.queryByText("Saved question?")).not.toBeInTheDocument();
+    const del = fetchMock.mock.calls.find((c) => c[1]?.method === "DELETE");
+    expect(String(del?.[0])).toContain("/repositories/r-1/conversation");
   });
 
   it("highlights the matching source when a citation is clicked", async () => {

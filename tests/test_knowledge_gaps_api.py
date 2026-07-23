@@ -203,3 +203,55 @@ async def test_gaps_unknown_repository_404(db_session: AsyncSession, client: Asy
         headers=_auth(await _token(client, "admin")),
     )
     assert resp.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Reject a gap (admin-only) + rejected-list
+# --------------------------------------------------------------------------- #
+
+
+async def test_reject_requires_admin(db_session: AsyncSession, client: AsyncClient) -> None:
+    await _user(db_session, Role.USER, "alice")
+    repo = await _repo(db_session, "Handbook")
+    resp = await client.post(
+        f"/repositories/{repo.id}/knowledge-gaps/reject",
+        json={"question": "Q", "reason": "r"},
+        headers=_auth(await _token(client, "alice")),
+    )
+    assert resp.status_code == 403
+
+
+async def test_reject_empty_reason_is_422(db_session: AsyncSession, client: AsyncClient) -> None:
+    await _user(db_session, Role.ADMIN, "admin")
+    repo = await _repo(db_session, "Handbook")
+    resp = await client.post(
+        f"/repositories/{repo.id}/knowledge-gaps/reject",
+        json={"question": "Q", "reason": ""},
+        headers=_auth(await _token(client, "admin")),
+    )
+    assert resp.status_code == 422
+
+
+async def test_reject_then_gap_hidden_and_listed_rejected(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    await _user(db_session, Role.ADMIN, "admin")
+    repo = await _repo(db_session, "Handbook")
+    await _log(db_session, repo_id=repo.id, question="What is the VPN?", not_in_vault=True)
+    token = await _token(client, "admin")
+    r = await client.post(
+        f"/repositories/{repo.id}/knowledge-gaps/reject",
+        json={"question": "What is the VPN?", "reason": "Out of scope"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201
+    gaps = (
+        await client.get(f"/repositories/{repo.id}/knowledge-gaps", headers=_auth(token))
+    ).json()
+    assert gaps == []
+    rejected = (
+        await client.get(f"/repositories/{repo.id}/knowledge-gaps/rejected", headers=_auth(token))
+    ).json()
+    assert rejected[0]["question"] == "What is the VPN?"
+    assert rejected[0]["reason"] == "Out of scope"
+    assert rejected[0]["rejected_by"] == "admin"

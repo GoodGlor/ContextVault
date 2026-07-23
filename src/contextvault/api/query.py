@@ -27,6 +27,7 @@ from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.llm import Citation
 from contextvault.models import Repository, Source, SourceKind, User
 from contextvault.retrieval import retrieve
+from contextvault.services import conversations as convo_service
 from contextvault.services import grants as grant_service
 from contextvault.services import providers as provider_service
 from contextvault.services.query_log import log_query
@@ -40,23 +41,15 @@ router = APIRouter(tags=["query"])
 MAX_HISTORY_TURNS = 10
 
 
-class ConversationTurn(BaseModel):
-    """One prior exchange in the same conversation, sent back for context."""
-
-    question: str = Field(min_length=1)
-    answer: str
-
-
 class QueryRequest(BaseModel):
-    """A user's question against one repository, with optional conversation history.
+    """A user's question against one repository.
 
-    ``history`` is the prior turns of this chat (oldest first). It lets a follow-up
-    question resolve references to earlier turns; it is context only and never
-    becomes a citable source. Only the most recent ``MAX_HISTORY_TURNS`` are used.
+    Conversation history is server-side: the endpoint loads this user's saved
+    thread for the repository and threads the most recent ``MAX_HISTORY_TURNS``
+    into the prompt. Clients send only the question.
     """
 
     question: str = Field(min_length=1)
-    history: list[ConversationTurn] = Field(default_factory=list)
 
 
 class CitationResponse(BaseModel):
@@ -182,7 +175,8 @@ async def query_repository(
         )
     provider = await build_provider(session, repo)
 
-    history = [(turn.question, turn.answer) for turn in payload.history[-MAX_HISTORY_TURNS:]]
+    conversation = await convo_service.get_or_create_conversation(session, user.id, repository_id)
+    history = await convo_service.recent_history(session, conversation.id, MAX_HISTORY_TURNS)
 
     # Contextualise retrieval for follow-ups: a terse question like "and for
     # part-timers?" embeds poorly alone, so prepend the previous question so the
@@ -201,6 +195,9 @@ async def query_repository(
     )
     answer = await provider.answer(payload.question, result.chunks, history)
 
+    citation_responses = [CitationResponse.model_validate(c) for c in answer.citations]
+    source_references = await _cited_sources(session, answer.citations)
+
     # Log the query — the raw material for the gap dashboard (#31) and analytics
     # (#33): who asked, against which repo, the retrieval signal, and whether the
     # answer was grounded. Persisted before returning so nothing is lost.
@@ -213,11 +210,23 @@ async def query_repository(
         chunk_count=len(result.chunks),
         not_in_vault=answer.not_in_vault,
     )
+    # Append this exchange to the saved conversation, so a follow-up question (or
+    # a page reload) sees it as server-authoritative history (design spec: the
+    # server, not the client, owns conversation history).
+    await convo_service.append_turn(
+        session,
+        conversation.id,
+        question=payload.question,
+        answer=answer.text,
+        not_in_vault=answer.not_in_vault,
+        citations=[c.model_dump(mode="json") for c in citation_responses],
+        sources=[s.model_dump(mode="json") for s in source_references],
+    )
     await session.commit()
 
     return QueryResponse(
         answer=answer.text,
         not_in_vault=answer.not_in_vault,
-        citations=[CitationResponse.model_validate(c) for c in answer.citations],
-        sources=await _cited_sources(session, answer.citations),
+        citations=citation_responses,
+        sources=source_references,
     )

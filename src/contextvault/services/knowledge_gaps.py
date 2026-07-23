@@ -11,6 +11,7 @@ The loop this feeds: user demand (gaps) → admin writes an Admin Note (#32) →
 vault permanently answers it.
 """
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,7 +20,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.models import QueryLog
+from contextvault.models import GapRejection, QueryLog
 from contextvault.services.query_log import normalized_question
 
 # Group questions that differ only in case or whitespace (shared with analytics #33).
@@ -48,6 +49,9 @@ async def list_knowledge_gaps(
     """Ranked knowledge gaps for a repository — most-asked (then most-recent) first."""
     ask_count = sa.func.count().label("ask_count")
     last_asked_at = sa.func.max(QueryLog.created_at).label("last_asked_at")
+    rejected = sa.select(GapRejection.normalized_question).where(
+        GapRejection.repository_id == repository_id
+    )
     stmt = (
         sa.select(
             sa.func.min(QueryLog.question).label("question"),
@@ -58,6 +62,7 @@ async def list_knowledge_gaps(
         .where(
             QueryLog.repository_id == repository_id,
             QueryLog.not_in_vault.is_(True),
+            _NORMALIZED_QUESTION.notin_(rejected),
         )
         .group_by(_NORMALIZED_QUESTION)
         .order_by(ask_count.desc(), last_asked_at.desc())
@@ -75,3 +80,69 @@ async def list_knowledge_gaps(
         )
         for row in rows
     ]
+
+
+def _normalize_text(question: str) -> str:
+    """Python twin of ``normalized_question`` (SQL) for storing the gap identity.
+
+    Mirrors SQL exactly: ``btrim()`` (default) trims ONLY ASCII spaces from the
+    edges — not all whitespace — so the edge-trim here must be spaces-only too.
+    Any leading/trailing tab or newline is left in place for the subsequent
+    ``\\s+`` → single-space collapse to normalize, exactly as SQL's
+    ``regexp_replace(lower(btrim(column)), '\\s+', ' ', 'g')`` does. Using
+    ``str.strip()`` (which trims all whitespace) here would diverge from SQL for
+    questions with edge tabs/newlines.
+    """
+    return re.sub(r"\s+", " ", question.strip(" ").lower())
+
+
+async def reject_gap(
+    session: AsyncSession,
+    repository_id: UUID,
+    *,
+    question: str,
+    reason: str,
+    admin_id: UUID | None,
+) -> GapRejection:
+    """Reject a gap (upsert on repo + normalized question); the caller commits."""
+    normalized = _normalize_text(question)
+    existing = (
+        await session.execute(
+            sa.select(GapRejection).where(
+                GapRejection.repository_id == repository_id,
+                GapRejection.normalized_question == normalized,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.question = question
+        existing.reason = reason
+        existing.rejected_by = admin_id
+        await session.flush()
+        return existing
+    rejection = GapRejection(
+        repository_id=repository_id,
+        normalized_question=normalized,
+        question=question,
+        reason=reason,
+        rejected_by=admin_id,
+    )
+    session.add(rejection)
+    await session.flush()
+    return rejection
+
+
+async def list_rejected_gaps(session: AsyncSession, repository_id: UUID) -> Sequence[GapRejection]:
+    """Rejected gaps for a repository, newest first."""
+    rows = (
+        (
+            await session.execute(
+                sa.select(GapRejection)
+                .where(GapRejection.repository_id == repository_id)
+                .order_by(GapRejection.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)

@@ -1,7 +1,10 @@
 """ORM models. Importing this package registers every table on Base.metadata."""
 
 from contextvault.models.chunk import Chunk
+from contextvault.models.conversation import Conversation
+from contextvault.models.conversation_turn import ConversationTurn
 from contextvault.models.enums import LLMProviderName, Role, SourceKind, SourceStatus
+from contextvault.models.gap_rejection import GapRejection
 from contextvault.models.grant import Grant
 from contextvault.models.invitation import Invitation
 from contextvault.models.provider_setting import ProviderSetting
@@ -12,6 +15,9 @@ from contextvault.models.user import User
 
 __all__ = [
     "Chunk",
+    "Conversation",
+    "ConversationTurn",
+    "GapRejection",
     "Grant",
     "Invitation",
     "LLMProviderName",

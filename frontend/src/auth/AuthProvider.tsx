@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { configureApi } from "../api/client";
 import * as authApi from "../api/auth";
@@ -54,14 +54,21 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   const logout = useCallback(() => persist(null), [persist]);
 
-  // Wire the API client once: it reads the token from the ref and clears the
-  // session on any 401 (an expired or revoked token bounces the user to /login).
-  useEffect(() => {
+  // Wire the API client synchronously during render (once, guarded by a ref) —
+  // NOT in a useEffect. React runs child effects before parent effects, so a
+  // child that fires a request on mount (e.g. a page loading its data) would
+  // otherwise run before this provider's effect had configured the client,
+  // sending the request with no token and tripping onUnauthorized on the 401,
+  // which logs out an otherwise-valid session. Wiring here guarantees the
+  // client is ready before any child can render or run an effect.
+  const wired = useRef(false);
+  if (!wired.current) {
     configureApi({
       getToken: () => sessionRef.current?.token ?? null,
       onUnauthorized: () => persist(null),
     });
-  }, [persist]);
+    wired.current = true;
+  }
 
   const login = useCallback(
     async (username: string, password: string) => {

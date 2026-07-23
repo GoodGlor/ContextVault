@@ -57,7 +57,8 @@
     "asking": "Думаю…",
     "ask": "Запитати",
     "send": "Надіслати",
-    "failedRepos": "Не вдалося завантажити репозиторії."
+    "failedRepos": "Не вдалося завантажити репозиторії.",
+    "clearConversation": "Очистити розмову"
   },
   "queryTurn": {
     "notInVault": "Немає у цьому сховищі — обґрунтованої відповіді на це питання не знайдено."
@@ -111,7 +112,15 @@
     "userQueryCount_many": "{{count}} запитів",
     "userQueryCount_other": "{{count}} запитів",
     "byDay": "За днями",
-    "byDayRow": "{{day}}: {{total}} всього, {{gaps}} прогалин"
+    "byDayRow": "{{day}}: {{total}} всього, {{gaps}} прогалин",
+    "rejectGap": "Відхилити",
+    "rejectReason": "Причина відхилення",
+    "rejectReasonPlaceholder": "Поясніть, чому ця прогалина не буде закрита…",
+    "confirmReject": "Підтвердити відхилення",
+    "rejectedGaps": "Відхилені прогалини",
+    "rejectedBy": "відхилено {{admin}} · {{date}}",
+    "noRejectedGaps": "Немає відхилених прогалин.",
+    "errorRejectGap": "Не вдалося відхилити прогалину."
   },
   "adminSources": {
     "title": "Джерела",

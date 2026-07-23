@@ -631,6 +631,28 @@ relevant, the honest "not in this vault" behaviour carries through the provider
 untouched: `not_in_vault` is `true`, `answer` is the refusal text, and both
 `citations` and `sources` are empty — the endpoint never special-cases it.
 
+### Conversation memory (persisted, server-authoritative)
+
+Conversation history is **persisted per (user, repository)** and **owned by the
+server**, not the client: the request body carries only `{"question": "..."}` — a
+client never sends a `history` field. `POST /repositories/{id}/query` loads this
+user's saved thread for the repository, threads the most recent
+`MAX_HISTORY_TURNS` (10) `(question, answer)` pairs into the prompt (and folds the
+prior question into the retrieval query, so a follow-up like "what about X"
+retrieves in context), then appends the new exchange — question, answer,
+`not_in_vault`, and the exact `citations`/`sources` it was served with — as one
+`ConversationTurn`. There is exactly one conversation per user per repository,
+created lazily on first use.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /repositories/{id}/conversation` | This user's saved conversation for the repository, oldest turn first (empty `turns: []` if none yet). Each turn mirrors the query response shape exactly, so a page reload rebuilds the thread verbatim — including its citations and sources. |
+| `DELETE /repositories/{id}/conversation` | Delete this user's saved conversation for the repository (the "Clear conversation" action). `204` on success. |
+
+Both endpoints require the same **active grant** as `/query` (`404` unknown repo,
+`403` no access). Conversations and their turns are per-user and cascade away with
+the user or the repository (`ON DELETE CASCADE`).
+
 ### Query logging
 
 Every answered query writes one `query_logs` row (design spec §5) — the raw
@@ -655,14 +677,22 @@ this vault" (`not_in_vault = true` — retrieval was empty or too weak to ground
 | Endpoint | Behavior |
 |---|---|
 | `GET /repositories/{id}/knowledge-gaps` | **Admin-only.** Ranked, aggregated gaps for the repository. `?limit=` (1–200, default 50). `404` if the repo is unknown. |
+| `POST /repositories/{id}/knowledge-gaps/reject` | **Admin-only.** Reject a gap question with a required `reason`: body `{"question": "...", "reason": "..."}` (both non-empty). Upserted on `(repository_id, normalized_question)`, so rejecting the same topic again just replaces the reason. Returns `201` with the rejection (`question`, `reason`, `rejected_by`, `rejected_at`). `404` if the repo is unknown. |
+| `GET /repositories/{id}/knowledge-gaps/rejected` | **Admin-only.** Rejected gaps for the repository, newest first. |
 
 Similar questions are aggregated **case- and whitespace-insensitively** (a v1
 heuristic — lowercase, trim, collapse whitespace; not semantic clustering), so
 re-asks of the same topic merge into one row. Each row carries a representative
 question, `ask_count` (times asked), `user_count` (distinct known askers), and
 `last_asked_at`, ranked most-asked then most-recent — "N users asked about X, no
-source covers it." The admin closes a gap by writing an Admin Note (a source), and
-the next user who asks gets the answer automatically.
+source covers it." An admin closes a gap one of two ways: **answer** it by writing
+an Admin Note (a source), after which the next user who asks gets the answer
+automatically; or **reject** it — decide it's out of scope, with a required
+written reason (`GapRejection`, keyed by the same normalized question the
+aggregation uses). Either way the topic drops out of the active gap list — a
+rejected question is excluded at the same SQL query that aggregates gaps — and
+survives its authoring admin being deleted (`rejected_by` goes `null`, matching
+Admin Notes).
 
 ### Query analytics
 
@@ -740,6 +770,10 @@ session on any `401`, bouncing the user back to `/login`.
   card #90) and shows it inline. Access is gated by the caller's active grant (403 otherwise).
 - **Not in this vault** — when the response's `not_in_vault` is set, the turn shows an
   explicit callout rather than dressing up the refusal as an answer.
+- **Persisted conversation** — on selecting a repository the page restores the saved
+  thread from the server (`GET …/conversation`) instead of starting blank, so a reload
+  never loses history; a **Clear conversation** button deletes it (`DELETE …/conversation`).
+  The client never sends history in the query request — the server is authoritative.
 
 **Admin surface** (cards #37–#40, admin-only pages, linked from the header nav for admins):
 
@@ -769,9 +803,12 @@ session on any `401`, bouncing the user back to `/login`.
 - **Insights** (`/admin/insights`) — the curation cockpit. A **knowledge-gap
   dashboard** (`GET …/knowledge-gaps`) ranks the questions a repo couldn't answer;
   "Answer this gap" opens an inline **Admin Note** editor prefilled with the question
-  (`POST …/admin-notes`), which closes the gap once ingested. An **analytics** panel
-  (`GET /analytics`) shows totals + gap rate, per-repository volume, top questions,
-  most-active users, and a by-day series.
+  (`POST …/admin-notes`), which closes the gap once ingested. Alongside it, "Reject"
+  opens a form requiring a reason (`POST …/knowledge-gaps/reject`) — either action
+  removes the gap from the active list. A **Rejected gaps** list
+  (`GET …/knowledge-gaps/rejected`) shows what was rejected, why, by whom, and when.
+  An **analytics** panel (`GET /analytics`) shows totals + gap rate, per-repository
+  volume, top questions, most-active users, and a by-day series.
 
 All admin routes are guarded by `RequireAuth requireAdmin`, so non-admins are bounced home.
 
