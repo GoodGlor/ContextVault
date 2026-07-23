@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { listRepositories, type Repository } from "../api/repositories";
 import { queryRepository, type QueryResult } from "../api/query";
+import { clearConversation, getConversation } from "../api/conversations";
 import { QueryTurn } from "../components/QueryTurn";
 
 interface Turn {
@@ -49,23 +50,53 @@ export function QueryPage(): ReactNode {
     bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [turns, asking]);
 
-  // A conversation belongs to one repository, so switching repos starts fresh —
-  // stale history would mislead the next answer's context.
+  // A conversation belongs to one repository. Switching repos changes `selected`;
+  // the effect below loads that repository's own saved conversation (or starts
+  // fresh when it has none), so stale history from the previous repo never leaks in.
   const onSelectRepo = (id: string) => {
     setSelected(id);
-    setTurns([]);
     setAskError(null);
   };
+
+  // Restore this user's saved conversation for the selected repository — this
+  // runs on mount (once a repo is auto-selected) and again on every repo switch.
+  useEffect(() => {
+    if (selected === "") return;
+    let cancelled = false;
+    setAskError(null);
+    getConversation(selected)
+      .then((c) => {
+        if (cancelled) return;
+        setTurns(
+          c.turns.map((t, i) => ({
+            id: `saved-${i}`,
+            question: t.question,
+            result: {
+              answer: t.answer,
+              not_in_vault: t.not_in_vault,
+              citations: t.citations,
+              sources: t.sources,
+            },
+            repositoryId: selected,
+          })),
+        );
+        turnSeq.current = c.turns.length;
+      })
+      .catch(() => {
+        if (!cancelled) setTurns([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
 
   const submit = async () => {
     const q = question.trim();
     if (selected === "" || q === "" || asking) return;
     setAsking(true);
     setAskError(null);
-    // Send the running conversation (this repo's turns) so follow-ups have context.
-    const history = turns.map((turn) => ({ question: turn.question, answer: turn.result.answer }));
     try {
-      const result = await queryRepository(selected, q, history);
+      const result = await queryRepository(selected, q);
       turnSeq.current += 1;
       setTurns((prev) => [
         ...prev,
@@ -76,6 +107,19 @@ export function QueryPage(): ReactNode {
       setAskError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     } finally {
       setAsking(false);
+    }
+  };
+
+  // Delete this user's saved thread for the selected repository and reset the
+  // on-screen transcript to match.
+  const onClear = async () => {
+    if (selected === "") return;
+    try {
+      await clearConversation(selected);
+      setTurns([]);
+      turnSeq.current = 0;
+    } catch (err) {
+      setAskError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     }
   };
 
@@ -137,6 +181,11 @@ export function QueryPage(): ReactNode {
             ))}
           </select>
         </label>
+        {turns.length > 0 && (
+          <button type="button" className="chat-clear" onClick={() => void onClear()}>
+            {t("query.clearConversation")}
+          </button>
+        )}
       </div>
 
       <div className="chat-log">

@@ -57,7 +57,8 @@
     "asking": "Thinking…",
     "ask": "Ask",
     "send": "Send",
-    "failedRepos": "Failed to load repositories."
+    "failedRepos": "Failed to load repositories.",
+    "clearConversation": "Clear conversation"
   },
   "queryTurn": {
     "notInVault": "Not in this vault — no grounded answer was found for this question."
