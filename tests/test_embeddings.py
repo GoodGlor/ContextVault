@@ -128,3 +128,19 @@ def test_embed_raises_when_gemini_returns_no_embeddings(monkeypatch: pytest.Monk
     provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
     with pytest.raises(EmbeddingError, match="no embeddings"):
         provider.embed(["a"])
+
+
+def test_embed_raises_when_embedding_has_no_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _NoValuesModels:
+        def embed_content(
+            self, *, model: str, contents: Sequence[str], config: Any
+        ) -> _FakeResponse:
+            return _FakeResponse([_FakeEmbedding(None)])  # type: ignore[arg-type]
+
+    class _NoValuesClient:
+        models = _NoValuesModels()
+
+    monkeypatch.setattr(gemini_mod, "_genai_client", lambda api_key: _NoValuesClient())
+    provider = GeminiEmbeddingProvider(api_key="k", model_name="m", dimension=1024)
+    with pytest.raises(EmbeddingError, match="empty embedding"):
+        provider.embed(["a"])

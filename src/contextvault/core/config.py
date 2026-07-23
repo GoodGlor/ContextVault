@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     # count as relevant. Hits below this are dropped, so a query that finds only
     # weak matches yields no chunks — the signal behind the honest "not in this
     # vault" answer and the knowledge-gap dashboard (design spec §4/§5). Tune per
-    # embedding model; higher is stricter. bge-m3 relevant matches sit well above
-    # this conservative default.
+    # embedding model; higher is stricter. This is a conservative default carried
+    # over from the previous local model; Gemini's embedding distribution may
+    # warrant re-tuning.
     retrieval_min_score: float = 0.3
 
     # Generation (RAG loop). ``llm_provider`` selects the system-default LLM

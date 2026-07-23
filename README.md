@@ -27,13 +27,15 @@ LLM, so different corpora can answer with different models.
   admin surfaces for repositories, sources, users/grants, and insights.
 - **Multiple source kinds** — PDF/DOCX/TXT documents, Admin Notes, images (local OCR,
   text-only), and web links (single page) are all ingestible sources.
-- **Local, multilingual embeddings** — sentence-transformers (bge-m3), so no documents
-  or queries leave for a third-party embedding service.
+- **Gemini embeddings** — multilingual document/query embeddings via Google's
+  `gemini-embedding-001` (1024-dim, asymmetric task types); embedding text is sent to
+  the configured Gemini provider, consistent with how image OCR already sends content
+  to the provider.
 
 ## Tech stack
 
 - **Backend:** FastAPI · SQLAlchemy (async) + Alembic · Postgres + pgvector · Argon2 +
-  JWT · sentence-transformers.
+  JWT · Gemini embeddings (google-genai).
 - **Frontend:** React + TypeScript + Vite (single-page app).
 - **Tooling:** uv · ruff · mypy · pytest · Vitest + Testing Library · GitHub Actions CI.
 
@@ -82,7 +84,7 @@ essentials:
 | `DATABASE_URL` | Async Postgres connection string (matches `docker compose`). |
 | `SECRET_KEY` | JWT signing secret — set a strong value (≥ 32 bytes) in production. |
 | `ENCRYPTION_KEY` | Fernet key used to encrypt provider API keys at rest — **required** before any key is stored. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
-| `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Local embedding model and its vector width (must match). |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Gemini embedding model id (default `gemini-embedding-001`) and its output vector width (1024-dim, must match). |
 
 Per-repository LLM provider/model/key are configured at runtime through the admin UI,
 not the environment.
