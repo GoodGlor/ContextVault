@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-23 (multi-file upload + chat-with-memory shipped)
+- **Last updated:** 2026-07-23 (multi-file upload + chat-with-memory + chat e2e)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -37,8 +37,8 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | Chat + memory on the query page, squash-merged; before it multi-file upload (#106), #105, #104 |
-| Last merged PR | chat + memory (query page); before it #106 (multi-file upload), #105 (model-picker/CI/env), #104 (copy invite-link) |
+| `main` HEAD | Chat e2e (`query.spec.ts`), squash-merged; before it chat+memory (#107), multi-file upload (#106), #105 |
+| Last merged PR | chat e2e; before it #107 (chat + memory), #106 (multi-file upload), #105 (model-picker/CI/env) |
 | In flight | none |
 | CI | **green** (was red #101–#104: prettier + a masked `vite.config.ts` typecheck error) |
 
@@ -74,6 +74,16 @@ as a source. Retrieval is contextualised for terse follow-ups by prepending the 
 question to the embedding query (answered/logged question stays raw). EN + UK strings added.
 Tests: backend 340✓ (citations + query-api history threading), frontend 63✓ (follow-up sends
 history, repo change clears it), e2e 2✓.
+
+### Chat e2e — squash-merged
+
+Closed the gap left above: a Playwright spec (`e2e/query.spec.ts`) drives the chat in a real
+browser against the real stack (real login, repo creation, grant, granted-repo listing) and
+intercepts only the browser's `/query` call — the one piece that would otherwise need a live,
+non-deterministic LLM — fulfilling it with a canned grounded answer. It asserts the exchange
+renders as user/assistant **bubbles** and that a **follow-up carries the running `history`**
+(first request `history: []`; second carries the first Q&A). Test-only; no source change. e2e
+now **3✓**. Backend memory threading remains covered by pytest.
 
 ### Model-picker UX + green CI + drop dead provider-key env fallbacks — squash-merged
 
