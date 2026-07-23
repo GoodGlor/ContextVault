@@ -42,6 +42,14 @@ _FORBIDDEN_FUNCTIONS = {
     "load_file",
 }
 
+# Whole families of Postgres system/large-object/dblink functions are
+# dangerous (file access, session control, cross-database queries). Rather
+# than enumerate every sibling (pg_read_binary_file, pg_stat_file,
+# pg_ls_waldir, lo_get, ...), reject anything with these prefixes. Legitimate
+# report/aggregation functions (SUM, COUNT, AVG, DATE_TRUNC, ROUND, ...) never
+# use these prefixes, so this doesn't affect real report queries.
+_FORBIDDEN_PREFIXES = ("pg_", "lo_", "dblink")
+
 
 class SQLValidationError(Exception):
     """The generated SQL violated the guardrails; the message is LLM-repair feedback."""
@@ -78,12 +86,16 @@ def validate_sql(
     tree = statements[0]
     if not isinstance(tree, exp.Select):
         raise SQLValidationError("Only a single SELECT statement is allowed.")
+    if tree.args.get("into") is not None:
+        raise SQLValidationError("SELECT INTO is not allowed.")
 
     for node in tree.walk():
         if isinstance(node, _FORBIDDEN_NODES):
             raise SQLValidationError(f"Forbidden operation: {node.key.upper()}.")
-        if isinstance(node, exp.Func) and _function_name(node) in _FORBIDDEN_FUNCTIONS:
-            raise SQLValidationError(f"Forbidden function: {_function_name(node)}.")
+        if isinstance(node, exp.Func):
+            fname = _function_name(node)
+            if fname in _FORBIDDEN_FUNCTIONS or fname.startswith(_FORBIDDEN_PREFIXES):
+                raise SQLValidationError(f"Forbidden function: {fname}.")
 
     allowed_tables = {t["table"].lower() for t in exposed_schema}
     allowed_columns = {c["name"].lower() for t in exposed_schema for c in t["columns"]}
@@ -91,6 +103,8 @@ def validate_sql(
     aliases = {a.alias.lower() for a in tree.find_all(exp.Alias) if a.alias}
 
     for table in tree.find_all(exp.Table):
+        if table.db or table.catalog:
+            raise SQLValidationError(f"Schema-qualified table not allowed: {table.sql()}.")
         if table.name.lower() not in allowed_tables | cte_names:
             raise SQLValidationError(f"Table not allowed: {table.name}.")
     for column in tree.find_all(exp.Column):

@@ -73,6 +73,31 @@ def test_rejects_unparseable_and_empty() -> None:
     _bad("")
 
 
+def test_rejects_schema_qualified_table() -> None:
+    _bad("SELECT id FROM evil.orders")
+    _bad("SELECT id FROM mydb.evil.orders")
+
+
+def test_rejects_dangerous_function_family_by_prefix() -> None:
+    _bad("SELECT pg_read_binary_file('/x')")
+    _bad("SELECT pg_stat_file('/x')")
+    _bad("SELECT pg_ls_waldir()")
+    _bad("SELECT lo_get(1)")
+
+
+def test_rejects_select_into() -> None:
+    _bad("SELECT city INTO other FROM orders")
+
+
+def test_legitimate_aggregations_still_pass() -> None:
+    out = _ok(
+        "SELECT city, SUM(total) AS revenue, ROUND(AVG(total), 2) AS avg_total "
+        "FROM orders WHERE created_at >= CURRENT_DATE - INTERVAL '30 days' "
+        "GROUP BY city"
+    )
+    assert "LIMIT 10000" in out
+
+
 def test_mysql_dialect_parses() -> None:
     out = validate_sql(
         "SELECT city FROM orders WHERE created_at >= CURDATE() - INTERVAL 30 DAY",
