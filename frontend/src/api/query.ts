@@ -29,21 +29,10 @@ export interface QueryResult {
   sources: SourceReference[];
 }
 
-/** One prior exchange sent back so a follow-up question resolves its references. */
-export interface ConversationTurnInput {
-  question: string;
-  answer: string;
-}
-
 /** Ask a question against one repository; returns the grounded answer + citations.
  *
- * ``history`` is the prior turns of this conversation (oldest first). The backend
- * uses them as context for a follow-up question — they never become citable
- * sources — and keeps only the most recent turns. */
-export function queryRepository(
-  repositoryId: string,
-  question: string,
-  history: ConversationTurnInput[] = [],
-): Promise<QueryResult> {
-  return api.post<QueryResult>(`/repositories/${repositoryId}/query`, { question, history });
+ * The backend resolves follow-up references using this user's saved conversation
+ * history for the repository server-side — the client no longer sends it. */
+export function queryRepository(repositoryId: string, question: string): Promise<QueryResult> {
+  return api.post<QueryResult>(`/repositories/${repositoryId}/query`, { question });
 }
