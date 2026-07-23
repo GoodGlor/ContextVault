@@ -28,6 +28,7 @@ from contextvault.llm import Citation
 from contextvault.models import Repository, Source, SourceKind, User
 from contextvault.retrieval import retrieve
 from contextvault.services import grants as grant_service
+from contextvault.services import providers as provider_service
 from contextvault.services.query_log import log_query
 
 router = APIRouter(tags=["query"])
@@ -167,19 +168,19 @@ async def query_repository(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="No access to this repository"
         )
-    # A repository must have its LLM configured before it can answer (card #24,
-    # design spec §3: no system default). Generation then routes to that per-repo
-    # provider (card #25): the request's provider is built from this repository's
-    # stored provider/model/key, never a process-wide default.
-    if not repo.llm_configured:
+    # A repository must be answerable before it can generate (design spec §3: no
+    # system default). That means a model is picked *and* its provider has a verified
+    # key in the global provider settings. Generation then routes to that provider
+    # (card #25), built from the repo's chosen provider/model plus the shared key.
+    if not await provider_service.repo_is_answerable(session, repo):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Repository has no LLM configured; an admin must configure a "
-                "provider, model, and API key before it can answer."
+                "Repository has no usable LLM; an admin must pick a model whose "
+                "provider has a verified API key before it can answer."
             ),
         )
-    provider = build_provider(repo)
+    provider = await build_provider(session, repo)
 
     history = [(turn.question, turn.answer) for turn in payload.history[-MAX_HISTORY_TURNS:]]
 

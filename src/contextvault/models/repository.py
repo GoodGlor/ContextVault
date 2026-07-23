@@ -1,10 +1,11 @@
 """Repository (curated corpus) model.
 
-Alongside identity fields, a repository carries its own LLM configuration —
-``llm_provider`` / ``llm_model`` / the encrypted ``api_key`` (design spec §3).
-There is no system default: a repository must be fully configured before it can
-answer (enforced at query time), and the API key is stored only as ciphertext
-(card #23) and never returned in full.
+Alongside identity fields, a repository picks the LLM it answers with — a
+``llm_provider`` + ``llm_model`` (design spec §3). The API *key* is no longer stored
+per-repository: keys live once per provider in ``ProviderSetting`` and are shared by
+every repository that selects that provider. A repository can answer only once it has
+picked a provider/model *and* that provider has a verified key — the second half of
+that predicate lives in the service layer (it spans two tables), not here.
 """
 
 from sqlalchemy import Enum, String, Text
@@ -23,19 +24,18 @@ class Repository(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Per-repository LLM configuration (design spec §3). All nullable: a
-    # repository starts unconfigured and cannot answer until an admin sets a
-    # provider, model, and API key. The key is Fernet ciphertext at rest
-    # (core/crypto.py), decrypted only in memory at call time.
+    # The LLM this repository answers with (design spec §3). Both nullable: a
+    # repository starts with no model picked. The API key is not here — it lives
+    # per-provider in ``ProviderSetting`` and is shared across repositories.
     llm_provider: Mapped[LLMProviderName | None] = mapped_column(
         Enum(LLMProviderName, name="llm_provider", values_callable=lambda e: [m.value for m in e]),
         nullable=True,
     )
     llm_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     @property
-    def llm_configured(self) -> bool:
-        """True once provider, model, and key are all set — the predicate the
-        query endpoint gates on so an unconfigured repo never reaches generation."""
-        return bool(self.llm_provider and self.llm_model and self.api_key_encrypted)
+    def llm_selected(self) -> bool:
+        """True once a provider and model are picked. Not sufficient to answer on its
+        own — the chosen provider must also have a verified key (checked in the
+        service layer, which can see ``ProviderSetting``)."""
+        return bool(self.llm_provider and self.llm_model)

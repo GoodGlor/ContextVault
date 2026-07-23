@@ -112,51 +112,15 @@ def test_corrupt_docx_raises_parse_error() -> None:
         parse_document("broken.docx", b"PK not really a docx")
 
 
-def _png_bytes() -> bytes:
-    buf = BytesIO()
-    Image.new("RGB", (32, 16), "white").save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def test_parse_image_returns_ocr_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "Hello world")
-    parsed = parse_document("scan.png", _png_bytes())
-    assert parsed.text == "Hello world"
-    assert len(parsed.blocks) == 1
-    assert parsed.blocks[0].page is None
-    _assert_contiguous(parsed)
-
-
-def test_parse_image_without_text_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "   ")
-    with pytest.raises(DocumentParseError, match="No text found in image"):
-        parse_document("blank.png", _png_bytes())
-
-
-def test_parse_corrupt_image_fails() -> None:
-    with pytest.raises(DocumentParseError, match="Could not read image file"):
-        parse_document("broken.png", b"this is not an image")
-
-
-def _heic_bytes() -> bytes:
-    buf = BytesIO()
-    Image.new("RGB", (32, 16), "white").save(buf, format="HEIF")
-    return buf.getvalue()
-
-
-def test_parse_heic_returns_ocr_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "Hello HEIC")
-    parsed = parse_document("photo.heic", _heic_bytes())
-    assert parsed.text == "Hello HEIC"
-    assert len(parsed.blocks) == 1
-    assert parsed.blocks[0].page is None
-    _assert_contiguous(parsed)
-
-
-def test_parse_heif_extension_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("contextvault.ingestion.ocr.ocr_image", lambda image: "text")
-    parsed = parse_document("photo.heif", _heic_bytes())
-    assert parsed.text == "text"
+def test_images_are_not_parsed_here() -> None:
+    """Images are no longer parsed by ``parse_document`` — they are transcribed by the
+    repository's vision model in the ingestion layer (see test_llm_ocr / ingestion
+    tests). ``parse_document`` therefore treats an image suffix as unsupported."""
+    png = BytesIO()
+    Image.new("RGB", (32, 16), "white").save(png, format="PNG")
+    for name in ("scan.png", "photo.heic", "photo.heif"):
+        with pytest.raises(UnsupportedDocumentError):
+            parse_document(name, png.getvalue())
 
 
 def test_parsed_from_text_single_block() -> None:

@@ -15,6 +15,7 @@ import {
   type LLMConfig,
   type LLMProvider,
 } from "../api/repositories";
+import { listProviders } from "../api/providers";
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.detail : fallback;
@@ -237,7 +238,8 @@ function RepoItem({
   );
 }
 
-/** Load and edit one repository's LLM configuration. */
+/** Pick the model a repository answers with. Keys are global (Providers tab); here you
+ *  only choose a provider that already has a verified key, then a model from it. */
 function RepoConfigPanel({
   repository,
   onConfigured,
@@ -247,12 +249,12 @@ function RepoConfigPanel({
 }): ReactNode {
   const { t } = useTranslation();
   const [config, setConfig] = useState<LLMConfig | null>(null);
+  // Which providers have a verified key — the only ones a repo can pick from.
+  const [verified, setVerified] = useState<Set<LLMProvider> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [provider, setProvider] = useState<LLMProvider>(LLM_PROVIDERS[0].value);
   const [model, setModel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [replacingKey, setReplacingKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -260,13 +262,17 @@ function RepoConfigPanel({
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
+  // Load the repo's current model choice alongside which providers are usable.
   useEffect(() => {
     let cancelled = false;
-    getLlmConfig(repository.id)
-      .then((cfg) => {
+    Promise.all([getLlmConfig(repository.id), listProviders()])
+      .then(([cfg, provs]) => {
         if (cancelled) return;
         setConfig(cfg);
-        if (cfg.provider !== null) setProvider(cfg.provider);
+        const verifiedSet = new Set(provs.filter((p) => p.verified).map((p) => p.provider));
+        setVerified(verifiedSet);
+        // Default to the repo's current provider, else the first verified one.
+        setProvider(cfg.provider ?? [...verifiedSet][0] ?? LLM_PROVIDERS[0].value);
         if (cfg.model !== null) setModel(cfg.model);
       })
       .catch(
@@ -278,12 +284,10 @@ function RepoConfigPanel({
     };
   }, [repository.id, t]);
 
-  // When the selected provider already has a relevant stored key, fetch its models
-  // automatically so the dropdown is populated with the current model preselected —
-  // no need to re-enter the key just to change the model. Re-runs if the provider is
-  // switched back to the configured one.
+  // Auto-load the model list whenever the selected provider has a verified key — no
+  // key entry needed here, the provider's global key is used server-side.
   useEffect(() => {
-    if (config === null || !config.configured || provider !== config.provider) return;
+    if (verified === null || !verified.has(provider)) return;
     let cancelled = false;
     setLoadingModels(true);
     setModelsError(null);
@@ -301,21 +305,15 @@ function RepoConfigPanel({
     return () => {
       cancelled = true;
     };
-  }, [config, provider, repository.id, t]);
+  }, [verified, provider, repository.id, t]);
 
   const onLoadModels = async () => {
     setLoadingModels(true);
     setModelsError(null);
     try {
-      const result = await listModels(repository.id, {
-        provider,
-        // Send the just-entered key if present; otherwise the backend uses the stored one.
-        api_key: apiKey === "" ? undefined : apiKey,
-      });
+      const result = await listModels(repository.id, { provider });
       setModels(result.models);
-      if (result.models.length === 0) {
-        setModelsError(t("repositories.noModels"));
-      }
+      if (result.models.length === 0) setModelsError(t("repositories.noModels"));
     } catch (err) {
       setModelsError(errorMessage(err, t("repositories.couldNotLoadModels")));
     } finally {
@@ -326,39 +324,28 @@ function RepoConfigPanel({
   if (loadError !== null) {
     return <p className="error">{loadError}</p>;
   }
-  if (config === null) {
+  if (config === null || verified === null) {
     return <p>{t("repositories.loadingConfiguration")}</p>;
   }
+  // Nothing can be picked until at least one provider has a key.
+  if (verified.size === 0) {
+    return <p className="notice">{t("repositories.noVerifiedProviders")}</p>;
+  }
 
-  // The stored key belongs to the configured provider. It is "relevant" only while
-  // that same provider is selected — switch providers and a new key is required.
-  const keyIsRelevant = config.configured && provider === config.provider;
-  const keyRequired = !keyIsRelevant;
-  // Show the key input when a key is required (no relevant stored one), or when the
-  // admin explicitly chooses to replace the existing one.
-  const showKeyInput = keyRequired || replacingKey;
-  // We can fetch models with the stored key (relevant) or a just-entered one.
-  const canLoad = keyIsRelevant || apiKey.trim() !== "";
+  const providerVerified = verified.has(provider);
   // The single model field's options: the fetched models, plus the current model so
   // it always shows even before the list loads (or if it's since been retired).
   const modelOptions = model && !models.includes(model) ? [model, ...models] : models;
 
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
-    if (model.trim() === "" || (keyRequired && apiKey.trim() === "")) return;
+    if (model.trim() === "" || !providerVerified) return;
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
-      const updated = await setLlmConfig(repository.id, {
-        provider,
-        model: model.trim(),
-        // Only send a key when one was entered; otherwise the stored key is kept.
-        ...(apiKey.trim() !== "" ? { api_key: apiKey } : {}),
-      });
+      const updated = await setLlmConfig(repository.id, { provider, model: model.trim() });
       setConfig(updated);
-      setApiKey("");
-      setReplacingKey(false);
       setSaved(true);
       onConfigured();
     } catch (err) {
@@ -368,41 +355,35 @@ function RepoConfigPanel({
     }
   };
 
-  const keyId = `key-${repository.id}`;
   const providerId = `provider-${repository.id}`;
   const modelSelectId = `model-${repository.id}`;
 
   return (
     <form className="repo-config" onSubmit={onSave}>
-      {/* The stored key only applies to its own provider; don't advertise it once a
-          different provider is selected (a new key is needed then). */}
-      {keyIsRelevant && config.api_key_masked !== null && (
-        <p className="current-key">
-          {t("repositories.currentKey", { value: config.api_key_masked })}
-        </p>
-      )}
       <label htmlFor={providerId}>{t("repositories.provider")}</label>
       <select
         id={providerId}
         value={provider}
         onChange={(e) => {
           const next = e.target.value as LLMProvider;
+          if (next === provider) return; // re-selecting the same provider is a no-op
           setProvider(next);
-          // The old list belongs to the previous provider — clear it. Keep the model
-          // only when returning to the configured provider; otherwise a new one is picked.
+          // The old list belongs to the previous provider — clear it (the auto-load
+          // effect refetches for the new one). Keep the model only when returning to
+          // the configured provider; otherwise a new one is picked.
           setModels([]);
           setModelsError(null);
-          setReplacingKey(false);
-          setApiKey("");
           setModel(config.provider === next ? (config.model ?? "") : "");
         }}
       >
         {LLM_PROVIDERS.map((p) => (
-          <option key={p.value} value={p.value}>
-            {p.label}
+          <option key={p.value} value={p.value} disabled={!verified.has(p.value)}>
+            {verified.has(p.value) ? p.label : `${p.label} — ${t("repositories.providerNoKey")}`}
           </option>
         ))}
       </select>
+
+      {!providerVerified && <p className="notice">{t("repositories.selectedProviderNoKey")}</p>}
 
       {/* The model is a single field: a dropdown that shows the current model and
           the loaded alternatives. It appears once there's at least one option. */}
@@ -426,46 +407,12 @@ function RepoConfigPanel({
           </select>
         </>
       )}
-      <button type="button" onClick={onLoadModels} disabled={loadingModels || !canLoad}>
+      <button type="button" onClick={onLoadModels} disabled={loadingModels || !providerVerified}>
         {loadingModels ? t("repositories.loadingModels") : t("repositories.loadModels")}
       </button>
       {modelsError !== null && <p className="error">{modelsError}</p>}
 
-      {/* The key is only asked for when there's no relevant stored one. An already-keyed
-          provider offers an explicit "Replace key" instead of forcing re-entry. */}
-      {showKeyInput ? (
-        <>
-          <label htmlFor={keyId}>{t("repositories.apiKey")}</label>
-          <input
-            id={keyId}
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={keyIsRelevant ? t("repositories.keyPlaceholder") : ""}
-            required={keyRequired}
-          />
-          {replacingKey && (
-            <button
-              type="button"
-              onClick={() => {
-                setReplacingKey(false);
-                setApiKey("");
-              }}
-            >
-              {t("repositories.cancelReplaceKey")}
-            </button>
-          )}
-        </>
-      ) : (
-        <button type="button" onClick={() => setReplacingKey(true)}>
-          {t("repositories.replaceKey")}
-        </button>
-      )}
-
-      <button
-        type="submit"
-        disabled={saving || model.trim() === "" || (keyRequired && apiKey.trim() === "")}
-      >
+      <button type="submit" disabled={saving || model.trim() === "" || !providerVerified}>
         {t("repositories.saveConfiguration")}
       </button>
       {saved && <p className="success">{t("repositories.configurationSaved")}</p>}

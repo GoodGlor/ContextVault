@@ -21,12 +21,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_embedder, get_ingestion_session_factory, get_llm_builder
 from contextvault.core.config import get_settings
-from contextvault.core.crypto import decrypt, encrypt
+from contextvault.core.crypto import encrypt
 from contextvault.db.session import get_session
 from contextvault.llm.base import Answer, Citation
 from contextvault.llm.citations import NOT_IN_VAULT, not_in_vault_answer
 from contextvault.main import create_app
-from contextvault.models import Grant, LLMProviderName, Repository, Role, User
+from contextvault.models import (
+    Grant,
+    LLMProviderName,
+    ProviderSetting,
+    Repository,
+    Role,
+    User,
+)
 from contextvault.retrieval import RetrievedChunk
 from contextvault.services import users as user_service
 
@@ -93,7 +100,7 @@ class RecordingBuilder:
         self._provider = provider
         self.built_for: list[Repository] = []
 
-    def __call__(self, repo: Repository) -> RecordingProvider:
+    async def __call__(self, session: AsyncSession, repo: Repository) -> RecordingProvider:
         self.built_for.append(repo)
         return self._provider
 
@@ -146,12 +153,19 @@ async def _token(client: AsyncClient, username: str) -> str:
 
 async def _repo(db_session: AsyncSession, *, configured: bool = True) -> Repository:
     repo = Repository(name="Vault")
-    # A repository must have its LLM configured before it can answer (card #24);
-    # queries below drive the generation path, so configure it by default.
+    # A repository must be answerable before it can generate: a model picked whose
+    # provider has a verified key (design spec §3). Queries below drive the generation
+    # path, so make it answerable by default — seed the provider key too.
     if configured:
+        db_session.add(
+            ProviderSetting(
+                provider=LLMProviderName.OPENAI,
+                api_key_encrypted=encrypt("sk-test-key"),
+                verified_at=datetime.now(UTC),
+            )
+        )
         repo.llm_provider = LLMProviderName.OPENAI
         repo.llm_model = "gpt-4o"
-        repo.api_key_encrypted = encrypt("sk-test-key")
     db_session.add(repo)
     await db_session.flush()
     return repo
@@ -377,7 +391,7 @@ async def test_query_rejects_unconfigured_repository(
         headers=_auth(token),
     )
     assert resp.status_code == 409
-    assert "configure" in resp.json()["detail"].lower()
+    assert "model" in resp.json()["detail"].lower()
     # Generation was never reached — the gate stops before a provider is even built.
     assert builder.built_for == []
     assert provider.received is None
@@ -386,11 +400,11 @@ async def test_query_rejects_unconfigured_repository(
 async def test_query_routes_to_repository_configured_provider(
     db_session: AsyncSession, client: AsyncClient, builder: RecordingBuilder
 ) -> None:
-    # The endpoint builds its provider from THIS repository's stored config —
-    # provider, model, and the decrypted key — rather than a process-wide default
-    # (card #25, design spec §3/§4). Retrieval is empty here, but the provider is
-    # built before generation, so the routing decision is still observable.
-    repo = await _repo(db_session)  # openai / gpt-4o / sk-test-key
+    # The endpoint builds its provider from THIS repository's chosen provider/model —
+    # rather than a process-wide default (card #25, design spec §3/§4). Retrieval is
+    # empty here, but the provider is built before generation, so the routing decision
+    # is still observable. The key itself is shared from the global provider settings.
+    repo = await _repo(db_session)  # openai / gpt-4o, provider key seeded
     user = await _user(db_session, Role.USER, "router")
     await _grant(db_session, user.id, repo.id)
     token = await _token(client, "router")
@@ -407,5 +421,3 @@ async def test_query_routes_to_repository_configured_provider(
     assert routed.id == repo.id
     assert routed.llm_provider == LLMProviderName.OPENAI
     assert routed.llm_model == "gpt-4o"
-    assert routed.api_key_encrypted is not None
-    assert decrypt(routed.api_key_encrypted) == "sk-test-key"

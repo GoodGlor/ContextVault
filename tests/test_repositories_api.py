@@ -1,25 +1,25 @@
-"""Integration tests for the admin per-repo LLM-config API (card #24).
+"""Integration tests for the admin per-repo LLM-*model* API (card #24, revised).
 
-An admin sets a repository's provider / model / API key; the key is encrypted at
-rest (card #23) and only ever returned masked (design spec §3/§8). Driven with
-httpx.AsyncClient over the async ``db_session`` fixture, mirroring
-test_sources_api's real-auth pattern (a JWT minted per role via /auth/login).
+A repository no longer stores its own key — it picks a provider + model, and the key
+is shared from the global provider settings (see test_providers_api). So configuring a
+repo means choosing a model whose provider already has a verified key; there is no key
+in these requests or responses. Driven with httpx.AsyncClient over the async
+``db_session`` fixture, mirroring test_sources_api's real-auth pattern.
 """
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.core.crypto import decrypt
+from contextvault.core.crypto import encrypt
 from contextvault.db.session import get_session
 from contextvault.main import create_app
-from contextvault.models import Repository, Role
+from contextvault.models import LLMProviderName, ProviderSetting, Repository, Role
 from contextvault.services import users as user_service
-
-_KEY = "sk-proj-abcdefghijklmnop4f2a"
 
 
 @pytest.fixture
@@ -49,12 +49,26 @@ async def _repo(db_session: AsyncSession) -> Repository:
     return repo
 
 
+async def _verify_provider(
+    db_session: AsyncSession, provider: LLMProviderName = LLMProviderName.OPENAI
+) -> None:
+    """Seed a stored, verified key for ``provider`` (as the Providers settings would)."""
+    db_session.add(
+        ProviderSetting(
+            provider=provider,
+            api_key_encrypted=encrypt("sk-stored"),
+            verified_at=datetime.now(UTC),
+        )
+    )
+    await db_session.flush()
+
+
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _config(provider: str = "openai", model: str = "gpt-4o", api_key: str = _KEY) -> dict[str, str]:
-    return {"provider": provider, "model": model, "api_key": api_key}
+def _config(provider: str = "openai", model: str = "gpt-4o") -> dict[str, str]:
+    return {"provider": provider, "model": model}
 
 
 async def test_set_config_requires_authentication(
@@ -76,10 +90,11 @@ async def test_set_config_forbidden_for_non_admin(
     assert resp.status_code == 403
 
 
-async def test_admin_sets_config_and_key_is_masked_never_returned_in_full(
+async def test_admin_picks_model_from_a_verified_provider(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
     repo = await _repo(db_session)
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
 
     resp = await client.put(
@@ -90,41 +105,53 @@ async def test_admin_sets_config_and_key_is_masked_never_returned_in_full(
     assert body["provider"] == "openai"
     assert body["model"] == "gpt-4o"
     assert body["configured"] is True
-    # The masked key keeps prefix/suffix but never leaks the full secret.
-    assert body["api_key_masked"] == "sk-…•••4f2a"
-    assert _KEY not in resp.text
+    # No key is ever part of the config response — keys live in Providers settings.
+    assert "api_key_masked" not in body
 
-    # Stored as ciphertext, not plaintext — encrypt-at-rest (card #23/#24).
     await db_session.refresh(repo)
-    assert repo.api_key_encrypted is not None
-    assert repo.api_key_encrypted != _KEY
-    assert decrypt(repo.api_key_encrypted) == _KEY
+    assert repo.llm_provider == LLMProviderName.OPENAI
+    assert repo.llm_model == "gpt-4o"
 
 
-async def test_update_config_overwrites_previous(
+async def test_set_config_rejects_provider_without_a_verified_key(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    # The provider has no stored key, so the repo can't use it: 400, nothing saved.
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+    resp = await client.put(
+        f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token)
+    )
+    assert resp.status_code == 400
+    await db_session.refresh(repo)
+    assert repo.llm_provider is None
+    assert repo.llm_model is None
+
+
+async def test_update_model_overwrites_previous(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
     repo = await _repo(db_session)
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
 
     await client.put(f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token))
     resp = await client.put(
         f"/repositories/{repo.id}/llm-config",
-        json=_config(provider="gemini", model="gemini-2.5-flash", api_key="AIzaSyNEWKEY99xy"),
+        json=_config(model="gpt-4o-mini"),
         headers=_auth(token),
     )
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["provider"] == "gemini"
-    assert body["model"] == "gemini-2.5-flash"
-
+    assert resp.json()["model"] == "gpt-4o-mini"
     await db_session.refresh(repo)
-    assert repo.api_key_encrypted is not None
-    assert decrypt(repo.api_key_encrypted) == "AIzaSyNEWKEY99xy"
+    assert repo.llm_model == "gpt-4o-mini"
 
 
-async def test_get_config_returns_masked_key(db_session: AsyncSession, client: AsyncClient) -> None:
+async def test_get_config_returns_model_and_answerability(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
     repo = await _repo(db_session)
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
     await client.put(f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token))
 
@@ -133,8 +160,7 @@ async def test_get_config_returns_masked_key(db_session: AsyncSession, client: A
     body = resp.json()
     assert body["configured"] is True
     assert body["provider"] == "openai"
-    assert body["api_key_masked"] == "sk-…•••4f2a"
-    assert _KEY not in resp.text
+    assert body["model"] == "gpt-4o"
 
 
 async def test_get_config_unconfigured_repo(db_session: AsyncSession, client: AsyncClient) -> None:
@@ -146,7 +172,6 @@ async def test_get_config_unconfigured_repo(db_session: AsyncSession, client: As
     assert body["configured"] is False
     assert body["provider"] is None
     assert body["model"] is None
-    assert body["api_key_masked"] is None
 
 
 async def test_get_config_forbidden_for_non_admin(
@@ -161,6 +186,7 @@ async def test_get_config_forbidden_for_non_admin(
 async def test_set_config_unknown_repository_404(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
     resp = await client.put(
         f"/repositories/{uuid.uuid4()}/llm-config", json=_config(), headers=_auth(token)
@@ -181,52 +207,14 @@ async def test_set_config_rejects_unknown_provider(
     assert resp.status_code == 422
 
 
-async def test_set_config_requires_a_key_when_none_is_stored(
-    db_session: AsyncSession, client: AsyncClient
-) -> None:
-    # A blank/omitted key on a repo that has never had one is a 400: there is
-    # nothing to fall back to.
-    repo = await _repo(db_session)
-    token = await _token(client, db_session, Role.ADMIN)
-    resp = await client.put(
-        f"/repositories/{repo.id}/llm-config",
-        json={"provider": "openai", "model": "gpt-4o"},
-        headers=_auth(token),
-    )
-    assert resp.status_code == 400
+# --- list-models endpoint (uses the provider's global key) ------------------
 
 
-async def test_update_model_without_key_keeps_the_stored_key(
-    db_session: AsyncSession, client: AsyncClient
-) -> None:
-    # Once a key is stored, provider/model can change without re-sending it — the
-    # existing encrypted key is kept (card: admin can change model with key present).
-    repo = await _repo(db_session)
-    token = await _token(client, db_session, Role.ADMIN)
-    await client.put(f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token))
-
-    resp = await client.put(
-        f"/repositories/{repo.id}/llm-config",
-        json={"provider": "openai", "model": "gpt-4o-mini"},
-        headers=_auth(token),
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["model"] == "gpt-4o-mini"
-    # The key is untouched — still stored, still the original.
-    assert body["api_key_masked"] == "sk-…•••4f2a"
-    await db_session.refresh(repo)
-    assert repo.api_key_encrypted is not None
-    assert decrypt(repo.api_key_encrypted) == _KEY
-
-
-# --- list-models endpoint (feature B) ---------------------------------------
-
-
-async def test_list_models_uses_entered_key(
+async def test_list_models_uses_the_global_provider_key(
     db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = await _repo(db_session)
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
     seen: dict[str, object] = {}
 
@@ -239,43 +227,19 @@ async def test_list_models_uses_entered_key(
     monkeypatch.setattr("contextvault.api.repositories.list_models", fake_list_models)
     resp = await client.post(
         f"/repositories/{repo.id}/llm-models",
-        json={"provider": "openai", "api_key": "sk-entered"},
+        json={"provider": "openai"},
         headers=_auth(token),
     )
     assert resp.status_code == 200
     assert resp.json()["models"] == ["gpt-4o", "o3-mini"]
-    assert seen == {"provider": "openai", "api_key": "sk-entered"}
+    # The stored (decrypted) global key is used — the client never sends one.
+    assert seen == {"provider": "openai", "api_key": "sk-stored"}
 
 
-async def test_list_models_falls_back_to_stored_key(
-    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = await _repo(db_session)
-    token = await _token(client, db_session, Role.ADMIN)
-    # Configure the repo so it has a stored (encrypted) key.
-    await client.put(f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token))
-    seen: dict[str, object] = {}
-
-    async def fake_list_models(
-        provider: str, api_key: str, *, base_url: str | None = None
-    ) -> list[str]:
-        seen["api_key"] = api_key
-        return ["gpt-4o"]
-
-    monkeypatch.setattr("contextvault.api.repositories.list_models", fake_list_models)
-    resp = await client.post(
-        f"/repositories/{repo.id}/llm-models",
-        json={"provider": "openai"},  # no api_key → stored key
-        headers=_auth(token),
-    )
-    assert resp.status_code == 200
-    assert seen["api_key"] == _KEY  # the decrypted stored key
-
-
-async def test_list_models_no_key_available_400(
+async def test_list_models_no_key_for_provider_400(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:
-    repo = await _repo(db_session)  # unconfigured — no stored key
+    repo = await _repo(db_session)  # no provider keys stored
     token = await _token(client, db_session, Role.ADMIN)
     resp = await client.post(
         f"/repositories/{repo.id}/llm-models",
@@ -291,6 +255,7 @@ async def test_list_models_provider_error_is_400(
     from contextvault.llm.models import ModelListError
 
     repo = await _repo(db_session)
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
 
     async def boom(provider: str, api_key: str, *, base_url: str | None = None) -> list[str]:
@@ -299,7 +264,7 @@ async def test_list_models_provider_error_is_400(
     monkeypatch.setattr("contextvault.api.repositories.list_models", boom)
     resp = await client.post(
         f"/repositories/{repo.id}/llm-models",
-        json={"provider": "openai", "api_key": "bad"},
+        json={"provider": "openai"},
         headers=_auth(token),
     )
     assert resp.status_code == 400
@@ -313,26 +278,18 @@ async def test_list_models_forbidden_for_non_admin(
     token = await _token(client, db_session, Role.USER)
     resp = await client.post(
         f"/repositories/{repo.id}/llm-models",
-        json={"provider": "openai", "api_key": "x"},
+        json={"provider": "openai"},
         headers=_auth(token),
     )
     assert resp.status_code == 403
 
 
-async def test_list_models_unknown_repo_404(
-    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_list_models_unknown_repo_404(db_session: AsyncSession, client: AsyncClient) -> None:
+    await _verify_provider(db_session)
     token = await _token(client, db_session, Role.ADMIN)
-
-    async def fake_list_models(
-        provider: str, api_key: str, *, base_url: str | None = None
-    ) -> list[str]:
-        return []
-
-    monkeypatch.setattr("contextvault.api.repositories.list_models", fake_list_models)
     resp = await client.post(
         f"/repositories/{uuid.uuid4()}/llm-models",
-        json={"provider": "openai", "api_key": "x"},
+        json={"provider": "openai"},
         headers=_auth(token),
     )
     assert resp.status_code == 404

@@ -9,6 +9,7 @@
   },
   "nav": {
     "repositories": "Repositories",
+    "providers": "Providers",
     "sources": "Sources",
     "users": "Users",
     "insights": "Insights"
@@ -202,18 +203,33 @@
     "couldNotLoadModels": "Could not load models.",
     "couldNotSave": "Could not save the configuration.",
     "loadingConfiguration": "Loading configuration…",
-    "currentKey": "Current key: {{value}}",
     "provider": "Provider",
     "model": "Model",
     "loadingModels": "Loading models…",
     "loadModels": "Load models",
     "chooseModelPlaceholder": "Select a model…",
-    "apiKey": "API key",
-    "keyPlaceholder": "Enter a new key to replace the current one",
-    "replaceKey": "Replace key",
-    "cancelReplaceKey": "Cancel",
     "saveConfiguration": "Save configuration",
-    "configurationSaved": "Configuration saved."
+    "configurationSaved": "Configuration saved.",
+    "noVerifiedProviders": "No providers are set up yet. Add an API key in the Providers tab first.",
+    "providerNoKey": "no key",
+    "selectedProviderNoKey": "This provider has no API key yet. Add one in the Providers tab."
+  },
+  "providers": {
+    "title": "Providers",
+    "intro": "Enter one API key per provider. Each key is checked against the provider when you save, then shared by every repository that uses it.",
+    "loading": "Loading providers…",
+    "failedToLoad": "Failed to load providers.",
+    "apiKey": "API key",
+    "verified": "Verified",
+    "notSet": "Not set",
+    "currentKey": "Current key: {{value}}",
+    "replacePlaceholder": "Enter a new key to replace the current one",
+    "saveKey": "Save key",
+    "saving": "Verifying…",
+    "saved": "Key verified and saved.",
+    "removeKey": "Remove key",
+    "couldNotSave": "Could not save the key.",
+    "couldNotRemove": "Could not remove the key."
   },
   "answerText": {
     "jumpToSource": "Jump to source {{number}}"

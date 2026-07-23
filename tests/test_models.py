@@ -53,35 +53,56 @@ def test_grants_link_users_and_repositories_with_expiry() -> None:
     assert ("repository_id", "user_id") in uniques
 
 
-def test_repositories_carry_llm_config() -> None:
-    """Per-repo LLM config (card #24): provider (native enum), model, encrypted
-    key — all nullable, since a repository starts unconfigured (design spec §3)."""
+def test_repositories_carry_llm_model_choice() -> None:
+    """A repo picks a provider (native enum) + model — both nullable, since a repo
+    starts with no model chosen. The API key is NOT here; it lives per-provider in
+    ``provider_settings`` (design: global provider keys)."""
     repos = _table("repositories")
     cols = repos.columns
-    assert {"llm_provider", "llm_model", "api_key_encrypted"} <= set(cols.keys())
+    assert {"llm_provider", "llm_model"} <= set(cols.keys())
+    # The per-repo key is gone — keys are global now.
+    assert "api_key_encrypted" not in cols
 
     provider_type = repos.c.llm_provider.type
     assert isinstance(provider_type, sa.Enum)
     assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic"}
 
-    # Unconfigured by default: every config column is nullable.
+    # No model chosen by default: both columns are nullable.
     assert repos.c.llm_provider.nullable is True
     assert repos.c.llm_model.nullable is True
-    assert repos.c.api_key_encrypted.nullable is True
 
 
-def test_repository_llm_configured_requires_all_three_fields() -> None:
-    """A repo is answerable only once provider, model, and key are all set — the
-    predicate the query endpoint gates on (design spec §3: no system default)."""
+def test_repository_llm_selected_requires_provider_and_model() -> None:
+    """``llm_selected`` is true once a provider and model are picked. It is not the
+    full answerability predicate — that also needs the provider's global key (checked
+    in the service layer), so the model here has no key field."""
     repo = Repository(name="Vault")
-    assert repo.llm_configured is False
+    assert repo.llm_selected is False
 
     repo.llm_provider = LLMProviderName.OPENAI
-    assert repo.llm_configured is False
+    assert repo.llm_selected is False
     repo.llm_model = "gpt-4o"
-    assert repo.llm_configured is False
-    repo.api_key_encrypted = "cipher"
-    assert repo.llm_configured is True
+    assert repo.llm_selected is True
+
+
+def test_provider_settings_table_holds_one_key_per_provider() -> None:
+    """Global provider keys: one row per provider (unique), an encrypted key, and a
+    ``verified_at`` stamp set when the key last passed its live check."""
+    settings = _table("provider_settings")
+    cols = settings.columns
+    assert {"provider", "api_key_encrypted", "verified_at"} <= set(cols.keys())
+    assert cols["api_key_encrypted"].nullable is False
+
+    provider_type = settings.c.provider.type
+    assert isinstance(provider_type, sa.Enum)
+    assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic"}
+
+    uniques = {
+        tuple(col.name for col in c.columns)
+        for c in settings.constraints
+        if isinstance(c, sa.UniqueConstraint)
+    }
+    assert ("provider",) in uniques
 
 
 def test_sources_belong_to_repository_and_have_kind() -> None:

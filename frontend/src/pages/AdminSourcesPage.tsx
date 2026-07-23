@@ -108,7 +108,18 @@ export function AdminSourcesPage(): ReactNode {
     }
     const failed = results.length - created.length;
     if (failed > 0) {
-      setUploadError(t("adminSources.errorUploadSome", { failed, total: results.length }));
+      // When every upload was rejected for the same reason (e.g. images blocked
+      // because no model is configured), show that specific message; otherwise a
+      // partial failure gets the generic count.
+      const firstRejected = results.find((r) => r.status === "rejected") as
+        PromiseRejectedResult | undefined;
+      const detail =
+        created.length === 0 && firstRejected?.reason instanceof ApiError
+          ? firstRejected.reason.detail
+          : null;
+      setUploadError(
+        detail ?? t("adminSources.errorUploadSome", { failed, total: results.length }),
+      );
     } else {
       setFiles([]);
       if (fileInput.current) fileInput.current.value = "";

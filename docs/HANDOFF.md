@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-23 08:59 EEST (LLM config panel redesign)
+- **Last updated:** 2026-07-23 10:03 EEST (global provider keys + LLM-vision OCR)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -9,23 +9,33 @@
 ## TL;DR
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
-backend, React/Vite SPA), feature-complete. `main` is clean, synced with origin at
-`39d69f5` (#109), and **CI is green**.
+backend, React/Vite SPA), feature-complete.
 
-**This session** shipped five owner-requested changes, one squash-merged PR each (newest
-first): **#109** LLM config panel redesign — the model is one dropdown (no free-text
-input), and a configured repo can change its model **without re-entering the key**
-(key optional on the config PUT); **#108** a Playwright e2e for the chat; **#107** the
-query page became a **chat with memory** (user/assistant bubbles + composer; follow-ups
-send bounded conversation `history`, threaded server-side into the RAG prompt + retrieval);
-**#106** multi-file upload on the Sources page; **#105** made the model dropdown actually
-visible, got **CI green again** (was red #101–#104), and removed the dead process-wide
-`*_api_key` env fallbacks. Before this run: the A/B/C three-feature request (HEIC #101,
-model dropdown #102, EN/UK i18n #103) and copy-invite-link #104 — see *History*.
+**Latest work — global provider keys + LLM-vision OCR (branch `feat/global-provider-keys`,
+merging as one PR).** Started from a real bug: Ukrainian image uploads produced gibberish.
+Root cause — the local OCR (RapidOCR) shipped a **Chinese+English-only** dictionary, so
+Cyrillic was transliterated to Latin lookalikes (`Оплата`→`OnnaTa`) and no search could
+match it. The fix reshaped LLM config along the way (owner's call):
+- **API keys are now global per-provider**, not per-repo. New `provider_settings` table +
+  `services/providers.py` + `GET/PUT/DELETE /admin/providers`. Saving a key **verifies it
+  live** (reuses `list_models`) before storing; stored masked; new **Providers** admin tab.
+- **A repo just picks a model** (`{provider, model}`, no key) from a provider that has a
+  verified key. `Repository.api_key_encrypted` **dropped** (migration `d4f1a2b7c9e0`);
+  `build_repo_llm` + query gate now resolve the key from `provider_settings`.
+- **Images are OCR'd by the repo's own vision model** (`llm/ocr.py` `transcribe_image`,
+  per-provider, HEIC→JPEG normalized so `IMG_*.HEIC` is accepted). Image upload to a repo
+  with no usable model is **blocked (409)**. Local RapidOCR removed (dep + `ocr.py` gone).
 
-**No feature work is queued.** The one open follow-up is the SSRF DNS-rebinding hardening
-of the URL fetcher (from #100) — safe as-is (admin-only), but card it and run a
-`/security-review` before any non-admin exposure. See *Next up*.
+Verified: backend **354✓**/1 skipped (ruff + `ruff format --check` + mypy clean), frontend
+**68✓** (lint/typecheck/format clean, build ok), e2e **4✓** (admin, sources, query, providers).
+
+**Previous session** shipped #105–#110 (LLM config panel redesign #109, chat e2e #108,
+chat + memory #107, multi-file upload #106, visible-dropdown + green-CI #105) — see *History*.
+The one older open follow-up is SSRF DNS-rebinding hardening of the URL fetcher (from #100) —
+safe as-is (admin-only), card it + `/security-review` before non-admin exposure.
+
+**Pending owner step (not code):** after merge, delete all repos except **`NGU payments`**
+(dev instance cleanup the owner requested) — confirm the repo list first.
 
 ---
 
@@ -33,22 +43,43 @@ of the URL fetcher (from #100) — safe as-is (admin-only), but card it and run 
 
 | | Value |
 |---|---|
-| Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | LLM config redesign (single model dropdown + optional key), squash-merged; before it chat e2e (#108), #107, #106 |
-| Last merged PR | LLM config redesign; before it chat e2e (#108), #107 (chat + memory), #106 (multi-file upload) |
-| In flight | none |
-| CI | **green** (was red #101–#104: prettier + a masked `vite.config.ts` typecheck error) |
+| Current branch | `feat/global-provider-keys` (ahead of `main`; merging as one PR) |
+| `main` HEAD | `2344821` (#110, handoff wrap-up) — before this PR lands |
+| This branch | global provider keys + repo model-pick + LLM-vision OCR; RapidOCR removed; migration `d4f1a2b7c9e0` |
+| In flight | this PR (all checks green locally); then the owner's repo-cleanup step |
+| CI | green locally (backend ruff/format/mypy/pytest, frontend lint/typecheck/format/build); e2e run manually **4✓** |
 
-**Clean state.** Working tree clean; `main` even with `origin/main`. The invite-copy PR
-was **squash-merged**. **Prunable local branches:** `feat/copy-invite-link` (merged),
-`feat/i18n-uk`, `feat/model-dropdown`, `feat/heic-image-support`, `feat/image-web-sources`,
-and the old `feat/1-project-scaffolding` (all safe to `git branch -D`).
+**Migration note:** `d4f1a2b7c9e0` creates `provider_settings` and **drops
+`repositories.api_key_encrypted`** — old per-repo keys are *not* migrated; re-enter each
+provider's key once in the new Providers tab. Round-trips (down/up) cleanly.
 
 ---
 
 ## Done recently (this session)
 
-### LLM config panel redesign — single model dropdown + optional key — squash-merged
+### Global provider keys + LLM-vision OCR — branch `feat/global-provider-keys` (merging)
+
+**Bug:** Ukrainian/Cyrillic image uploads ingested as gibberish (local RapidOCR dict is
+Chinese+English only). **Fix + reshape:**
+- **Global provider keys.** `ProviderSetting` model + migration `d4f1a2b7c9e0` (drops the
+  per-repo key); `services/providers.py` (verify-then-store, decrypt, answerability);
+  `api/providers.py` (`GET/PUT/DELETE /admin/providers`, verify on save → 400 on bad key);
+  frontend `AdminProvidersPage` + nav tab + `api/providers.ts`.
+- **Repo picks a model.** `LLMConfigRequest`={provider, model} (no key); `set_llm_config`
+  requires a verified provider; `list-models` uses the global key; `build_repo_llm`/query
+  resolve the key from `provider_settings` (build is now async). `RepoConfigPanel` reworked:
+  provider select (only verified enabled), model auto-loads, no key input; empty-state hint.
+- **LLM-vision OCR.** `llm/ocr.py` `transcribe_image` (gemini/openai/anthropic/openrouter,
+  `OCRError`, HEIC→JPEG); ingestion routes images through the repo's model; 409 fail-fast on
+  image upload to an unanswerable repo. RapidOCR + `ingestion/ocr.py` removed.
+
+Tests: new `test_providers_api`, `test_llm_ocr`; reworked `test_repositories_api`,
+`test_sources_api` (image-OCR-via-model + blocked-409), `test_models`, query/notes/logging
+(seed a verified `ProviderSetting`); frontend new `AdminProvidersPage.test`, reworked
+`AdminRepositoriesPage.test`; e2e `providers.spec.ts` (replaces `llm-config.spec.ts`),
+`admin`/`sources` updated. Backend 354✓, frontend 68✓, e2e 4✓.
+
+### LLM config panel redesign — single model dropdown + optional key — squash-merged (#109)
 
 Fixes the config panel (`RepoConfigPanel` in `AdminRepositoriesPage.tsx`): a configured
 repo could not change its model because the API-key field was `required`, and the model was

@@ -9,13 +9,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.core.config import get_settings
-from contextvault.core.crypto import decrypt
 from contextvault.core.tokens import InvalidToken, decode_access_token
 from contextvault.db.session import SessionLocal, get_session
 from contextvault.embeddings.base import EmbeddingProvider
 from contextvault.embeddings.local import LocalEmbeddingProvider
 from contextvault.llm import LLMProvider, get_llm_provider
 from contextvault.models import Repository, Role, User
+from contextvault.services import providers as provider_service
 from contextvault.services import users as user_service
 from contextvault.services.ingestion import SessionFactory
 
@@ -108,31 +108,31 @@ def get_ingestion_session_factory() -> SessionFactory:
     return SessionLocal
 
 
-RepoLLMBuilder = Callable[[Repository], LLMProvider]
+RepoLLMBuilder = Callable[[AsyncSession, Repository], Awaitable[LLMProvider]]
 
 
-def build_repo_llm(repo: Repository) -> LLMProvider:
+async def build_repo_llm(session: AsyncSession, repo: Repository) -> LLMProvider:
     """Build the LLM provider a repository is configured to generate with (card #25).
 
-    Each repository carries its own provider, model, and encrypted key (card #24);
-    routing decrypts that key in memory and constructs the matching provider so the
-    query loop generates through the repo's *own* LLM, never a process-wide default
-    (design spec §3/§4). The query endpoint refuses unconfigured repositories (409)
-    before reaching here, so all three fields are present.
+    A repository picks a provider + model; the API *key* is shared from the global
+    provider settings (``ProviderSetting``). Routing looks up that provider's key,
+    decrypts it in memory, and constructs the matching provider so the query loop
+    generates through the repo's chosen LLM. The query endpoint refuses repositories
+    that aren't answerable (409) before reaching here, so provider, model, and a
+    verified key are all present.
     """
-    assert repo.llm_provider is not None and repo.api_key_encrypted is not None
-    return get_llm_provider(
-        repo.llm_provider.value,
-        api_key=decrypt(repo.api_key_encrypted),
-        model=repo.llm_model,
-    )
+    assert repo.llm_provider is not None
+    api_key = await provider_service.get_provider_key(session, repo.llm_provider)
+    assert api_key is not None, "provider key missing; caller must gate on answerability"
+    return get_llm_provider(repo.llm_provider.value, api_key=api_key, model=repo.llm_model)
 
 
 def get_llm_builder() -> RepoLLMBuilder:
     """Dependency yielding the per-repo provider builder (overridable in tests).
 
     The query endpoint (card #19/#25) resolves each request's provider from the
-    target repository's stored configuration through this seam; tests override it
-    to route to a recording fake instead of constructing a real vendor client.
+    target repository's chosen provider/model plus the global provider key through
+    this seam; tests override it to route to a recording fake instead of constructing
+    a real vendor client.
     """
     return build_repo_llm

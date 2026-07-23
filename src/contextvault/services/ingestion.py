@@ -21,8 +21,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.db.session import SessionLocal
 from contextvault.embeddings.base import EmbeddingProvider
-from contextvault.ingestion import chunk_document, parse_document, parsed_from_text
-from contextvault.models import Chunk, Source, SourceStatus
+from contextvault.ingestion import (
+    IMAGE_SUFFIXES,
+    ParsedDocument,
+    chunk_document,
+    file_suffix,
+    parse_document,
+    parsed_from_text,
+)
+from contextvault.llm.ocr import transcribe_image
+from contextvault.models import Chunk, Repository, Source, SourceStatus
+from contextvault.services import providers as provider_service
 from contextvault.services.web_source import extract_web_text, fetch_html
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
@@ -51,10 +60,36 @@ async def ingest_source(
     await session.commit()
 
     try:
-        parsed = parse_document(filename, data)
+        if file_suffix(filename) in IMAGE_SUFFIXES:
+            parsed = await _ocr_image(session, source, data)
+        else:
+            parsed = parse_document(filename, data)
         await store_parsed(session, source, parsed, embedder)
     except Exception as exc:
         await _record_failure(session, source_id, exc)
+
+
+async def _ocr_image(session: AsyncSession, source: Source, data: bytes) -> ParsedDocument:
+    """Transcribe an image source with the repository's configured vision model.
+
+    Images are read by the repo's own LLM (Cyrillic-capable, unlike the old local OCR)
+    using the provider's global key. Requires the repo to be answerable — a model
+    picked whose provider has a verified key — otherwise the source fails with a clear,
+    actionable message. Empty transcriptions are a failure too, not a silent success.
+    """
+    repo = await session.get(Repository, source.repository_id)
+    if repo is None or not await provider_service.repo_is_answerable(session, repo):
+        raise ValueError(
+            "This repository has no usable model for reading images. Pick a model whose "
+            "provider has a verified API key, then re-upload."
+        )
+    assert repo.llm_provider is not None and repo.llm_model is not None
+    key = await provider_service.get_provider_key(session, repo.llm_provider)
+    assert key is not None
+    text = await transcribe_image(repo.llm_provider.value, key, repo.llm_model, image=data)
+    if not text.strip():
+        raise ValueError("No text found in image.")
+    return parsed_from_text(text)
 
 
 async def store_parsed(
