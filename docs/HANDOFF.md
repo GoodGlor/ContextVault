@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-23 (Gemini embeddings — replace local torch embedder)
+- **Last updated:** 2026-07-23 12:32 EEST (Gemini embeddings merged as #112)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -11,13 +11,17 @@
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
 backend, React/Vite SPA), feature-complete.
 
-**Latest work — Gemini embeddings replace the local torch embedder (branch
-`feat/gemini-embeddings`, built via superpowers SDD, not a board card).** Embeddings now
+**Latest work — Gemini embeddings replace the local torch embedder — MERGED as #112 (squash
+`045d363`, branch deleted; built via superpowers SDD, not a board card).** Embeddings now
 run through the Gemini API (`gemini-embedding-001`, 1024-dim, asymmetric `task`:
 `RETRIEVAL_DOCUMENT` for ingestion, `RETRIEVAL_QUERY` for search) instead of a local
-`sentence-transformers`/bge-m3/torch model — no more GPU/CPU inference in-process, no
-torch serialization lock. The local embedder (`embeddings/local.py`) and its deps
-(`sentence-transformers`, `torch`) are **removed entirely**.
+`sentence-transformers`/bge-m3/torch model — no more GPU/CPU inference in-process. The local
+embedder (`embeddings/local.py`) and its deps (`sentence-transformers`, `torch`) are
+**removed entirely**. *Why this happened:* the local torch model ran on the Apple-Silicon
+Metal GPU and, under concurrent bulk-upload ingestion, segfaulted the process and **rebooted
+the owner's Mac** (verified from a `AGXMetal` SIGSEGV panic report). Moving to Gemini (a
+stateless HTTPS call) removes that failure class; a DB connection-pool-exhaustion bug on the
+same bulk-upload path was fixed in the same branch.
 - **A verified Gemini provider key is now required for both ingestion and query.**
   `get_embedder` resolves the key from `provider_settings` (the global per-provider key
   store from the previous session) and **409s** ("Gemini API key required...") when no
@@ -30,16 +34,21 @@ torch serialization lock. The local embedder (`embeddings/local.py`) and its dep
   (`embedding_dim` stays 1024, so the column shape is unchanged — only the vector *values*
   are incompatible).
 
-Verified: backend **361✓** (ruff + `ruff format --check` + mypy clean).
+Verified: backend **363✓** (adds an end-to-end Gemini test; ruff + `ruff format --check` +
+mypy clean). CI green on #112.
+
+**Pending owner step (required before use — not code):** **`TRUNCATE chunks`** and re-ingest
+every source. Old bge-m3 vectors live in a different space and will poison retrieval if mixed
+with Gemini vectors (no Alembic migration — `embedding_dim` stays 1024, only vector *values*
+are incompatible). Also set a **verified Gemini provider key** in the Providers tab, or every
+ingestion/query 409s.
 
 **Previous session** shipped global provider keys + LLM-vision OCR (#111) — see *History*
 for #105–#110 before that. The one older open follow-up is SSRF DNS-rebinding hardening of
 the URL fetcher (from #100) — safe as-is (admin-only), card it + `/security-review` before
-non-admin exposure.
-
-**Pending owner step (not code):** after merge, delete all repos except **`NGU payments`**
-(dev instance cleanup the owner requested) — confirm the repo list first. Also: **`TRUNCATE
-chunks`** and re-ingest sources once this branch is live, since old vectors are incompatible.
+non-admin exposure. *(A carried-over owner note from the previous handoff — dev-instance
+cleanup: delete all repos except `NGU payments`, confirm the list first — may already be
+done; verify.)*
 
 ---
 
@@ -47,11 +56,11 @@ chunks`** and re-ingest sources once this branch is live, since old vectors are 
 
 | | Value |
 |---|---|
-| Current branch | `feat/gemini-embeddings` (ahead of `main`; built via superpowers SDD) |
-| `main` HEAD | `5486fb4` (#111, global provider keys + LLM-vision OCR) — before this branch lands |
-| This branch | Gemini embeddings replace the local torch/`sentence-transformers` embedder; `get_embedder` 409s without a verified Gemini key; no new migration (`embedding_dim` unchanged at 1024) |
-| In flight | full backend gate green locally; not yet opened as a PR |
-| CI | green locally (backend ruff/format/mypy/pytest: **361✓**) |
+| Current branch | `main` (in sync with `origin/main`, tree clean) |
+| `main` HEAD | `045d363` (#112, Gemini embeddings replace the local torch embedder) |
+| In flight | nothing — #112 merged, branch deleted |
+| CI | green on #112 (backend ruff/format/mypy/pytest **363✓**; frontend ✓) |
+| Local infra | `contextvault-db` (pgvector pg16) container — had exited (255) at the Mac reboot; **restarted** (`docker start contextvault-db`), up + migrated |
 
 **Migration note:** `d4f1a2b7c9e0` creates `provider_settings` and **drops
 `repositories.api_key_encrypted`** — old per-repo keys are *not* migrated; re-enter each
@@ -68,11 +77,17 @@ documents / re-add web sources) so all chunks are embedded with Gemini.
 
 ## Done recently (this session)
 
-### Gemini embeddings replace the local torch embedder — branch `feat/gemini-embeddings` (built via superpowers SDD, not yet a PR)
+### Gemini embeddings replace the local torch embedder — merged as #112 (squash `045d363`; built via superpowers SDD, not a board card)
 
-**Motivation:** drop the local `sentence-transformers`/bge-m3/torch embedder — it ran
-CPU/GPU inference in-process (slow, needed a serialization lock to avoid corrupting the GPU
-under concurrent upload, and was a heavy dependency). Replaced with the Gemini embedding API:
+**Motivation:** the local `sentence-transformers`/bge-m3/torch embedder ran on the
+Apple-Silicon Metal GPU; concurrent embed calls from the ingestion thread pool under
+bulk image upload segfaulted the process and **rebooted the owner's Mac** (diagnosed from
+a `AGXMetal13_3` → `at::native::mps::handle_binary_op` SIGSEGV panic report). Removing torch
+kills that failure class. Two same-path crash fixes were folded into this branch first:
+(a) DB **connection-pool exhaustion** — `_ocr_image` held a pooled connection across the
+slow LLM-vision OCR call; now commits before it to release the connection; (b) an interim
+torch serialization lock (deleted along with `local.py`). Replaced the embedder with the
+Gemini embedding API:
 - **`GeminiEmbeddingProvider`** (`embeddings/gemini.py`) implements the existing `Embedder`
   protocol against `gemini-embedding-001` (1024-dim, matching `embedding_dim`), with
   asymmetric `task` — `RETRIEVAL_DOCUMENT` when embedding ingested chunks, `RETRIEVAL_QUERY`
@@ -91,13 +106,21 @@ under concurrent upload, and was a heavy dependency). Replaced with the Gemini e
   404 handler being tested.
 
 Tests: new `test_embedder_dependency.py` (409 without a key, resolves with one); reworked
-`test_embeddings.py` for the Gemini provider (task types, empty-response handling);
-`test_sources_api.py` gained `test_upload_without_gemini_key_returns_409` — the one test in
-that file that does **not** override `get_embedder`, exercising the real 409 path end to end
-through the API layer. Backend **361✓**, mypy/ruff clean.
+`test_embeddings.py` for the Gemini provider (batching/order, L2-normalization, task types,
+fail-loud on empty/None responses); `test_sources_api.py` gained
+`test_upload_without_gemini_key_returns_409` (real 409 path through the API); new
+**`test_gemini_embeddings_e2e.py`** — full upload→ingest→query loop through the *real*
+`GeminiEmbeddingProvider` (monkeypatches only the genai SDK boundary, seeds a Gemini key,
+asserts both `RETRIEVAL_DOCUMENT` and `RETRIEVAL_QUERY` flow). Docs updated (README's stale
+"nothing leaves the machine" privacy claim corrected; `docs/architecture.md` embeddings
+section + a code sample that imported the deleted `get_embedding_provider`). Backend
+**363✓**, mypy/ruff/format clean.
+
+**Process note:** built spec → plan → subagent-driven TDD (per-task + final whole-branch
+review). Specs/plans under `docs/superpowers/`.
 
 **Action required before use against existing data:** see the *Data note* under Repo &
-branch state above — `TRUNCATE chunks` and re-ingest.
+branch state above — `TRUNCATE chunks` and re-ingest, and set a verified Gemini key.
 
 ### Global provider keys + LLM-vision OCR — branch `feat/global-provider-keys` (merged as #111)
 
