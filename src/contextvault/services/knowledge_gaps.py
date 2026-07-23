@@ -83,8 +83,17 @@ async def list_knowledge_gaps(
 
 
 def _normalize_text(question: str) -> str:
-    """Python twin of ``normalized_question`` (SQL) for storing the gap identity."""
-    return re.sub(r"\s+", " ", question.strip().lower())
+    """Python twin of ``normalized_question`` (SQL) for storing the gap identity.
+
+    Mirrors SQL exactly: ``btrim()`` (default) trims ONLY ASCII spaces from the
+    edges — not all whitespace — so the edge-trim here must be spaces-only too.
+    Any leading/trailing tab or newline is left in place for the subsequent
+    ``\\s+`` → single-space collapse to normalize, exactly as SQL's
+    ``regexp_replace(lower(btrim(column)), '\\s+', ' ', 'g')`` does. Using
+    ``str.strip()`` (which trims all whitespace) here would diverge from SQL for
+    questions with edge tabs/newlines.
+    """
+    return re.sub(r"\s+", " ", question.strip(" ").lower())
 
 
 async def reject_gap(

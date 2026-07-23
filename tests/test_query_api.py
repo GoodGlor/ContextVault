@@ -473,6 +473,46 @@ async def test_query_not_in_vault_when_no_relevant_chunks(
     assert provider.received == []
 
 
+async def test_not_in_vault_turn_persists_and_replays_as_history(
+    db_session: AsyncSession, client: AsyncClient, provider: RecordingProvider
+) -> None:
+    # A refusal is still a turn: it must be persisted (not_in_vault=True) and,
+    # on the next question, replayed to the provider as prior history — the
+    # admin's honest "not in this vault" is part of the conversation too.
+    repo = await _repo(db_session)
+    user = await _user(db_session, Role.USER, "emptyvault2")
+    await _grant(db_session, user.id, repo.id)
+    token = await _token(client, "emptyvault2")
+
+    first = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "What is not here?"},
+        headers=_auth(token),
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["not_in_vault"] is True
+    first_answer = first_body["answer"]
+
+    turns = (
+        (await db_session.execute(sa.select(ConversationTurn).order_by(ConversationTurn.ordinal)))
+        .scalars()
+        .all()
+    )
+    assert len(turns) == 1
+    assert turns[0].question == "What is not here?"
+    assert turns[0].answer == first_answer
+    assert turns[0].not_in_vault is True
+
+    second = await client.post(
+        f"/repositories/{repo.id}/query",
+        json={"question": "Anything else?"},
+        headers=_auth(token),
+    )
+    assert second.status_code == 200
+    assert provider.received_history == [("What is not here?", first_answer)]
+
+
 async def test_query_rejects_unconfigured_repository(
     db_session: AsyncSession,
     client: AsyncClient,

@@ -69,7 +69,11 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
       .catch(
         (err: unknown) => !cancelled && setError(errorMessage(err, t("insights.errorLoadGaps"))),
       );
-    listRejectedGaps(selected).then((r) => !cancelled && setRejected(r));
+    listRejectedGaps(selected)
+      .then((r) => !cancelled && setRejected(r))
+      .catch(
+        (err: unknown) => !cancelled && setError(errorMessage(err, t("insights.errorLoadGaps"))),
+      );
     return () => {
       cancelled = true;
     };
@@ -83,7 +87,9 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
 
   const onRejected = (question: string) => {
     setGaps((prev) => prev?.filter((g) => g.question !== question) ?? prev);
-    listRejectedGaps(selected).then((r) => setRejected(r));
+    listRejectedGaps(selected)
+      .then((r) => setRejected(r))
+      .catch((err: unknown) => setError(errorMessage(err, t("insights.errorLoadGaps"))));
   };
 
   return (

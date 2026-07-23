@@ -69,3 +69,23 @@ async def test_list_rejected_newest_first(db_session: AsyncSession) -> None:
     await gap_service.reject_gap(db_session, repo.id, question="B", reason="b", admin_id=None)
     rejected = await gap_service.list_rejected_gaps(db_session, repo.id)
     assert {r.question for r in rejected} == {"A", "B"}
+
+
+async def test_reject_gap_normalization_matches_sql_for_edge_tab(
+    db_session: AsyncSession,
+) -> None:
+    """SQL ``btrim()`` only trims ASCII spaces from the edges; the Python-side
+    normalization used to store a rejection's identity must mirror that exactly
+    (spaces-only edge trim + whitespace collapse), or a question with a leading/
+    trailing tab/newline will be rejected but never actually excluded, since its
+    stored key won't match the SQL-normalized group key ``list_knowledge_gaps`` uses.
+    """
+    repo = await _repo(db_session)
+    question = "\tWhat is the VPN?"
+    await _gap_log(db_session, repo.id, question)
+    await gap_service.reject_gap(
+        db_session, repo.id, question=question, reason="n/a", admin_id=None
+    )
+    gaps = await gap_service.list_knowledge_gaps(db_session, repo.id)
+    assert question not in [g.question for g in gaps]
+    assert gaps == []
