@@ -16,13 +16,17 @@ LLM, so different corpora can answer with different models.
   and carries numbered `[n]` citations back to the exact source spans.
 - **Honest "not in this vault"** — when retrieval finds nothing relevant, the system
   refuses to fabricate and records the question as a knowledge gap.
+- **Persisted conversation memory** — each user's chat with a repository is saved
+  server-side, restored on reload (server-authoritative history — clients never send
+  it), and clearable on demand.
 - **Per-user access control** — users ↔ repositories is a many-to-many grant table,
   optionally time-boxed, and **hard-filtered at the SQL level** on every retrieval.
 - **Per-repository model choice** — each vault stores its own provider / model / API
   key (encrypted at rest); there is no shared default.
 - **Multi-provider generation** — Anthropic, OpenAI, Google (Gemini), and OpenRouter.
-- **Curation flywheel** — a ranked knowledge-gap dashboard feeds Admin Notes (first-class,
-  verified sources), and usage analytics show what's working.
+- **Curation flywheel** — a ranked knowledge-gap dashboard lets an admin close a gap
+  with an Admin Note (first-class, verified source) or reject it with a required
+  reason; usage analytics show what's working.
 - **Admin web UI + REST API** — a React SPA over a documented FastAPI backend, with
   admin surfaces for repositories, sources, users/grants, and insights.
 - **Multiple source kinds** — PDF/DOCX/TXT documents, Admin Notes, images (local OCR,
@@ -114,11 +118,13 @@ src/contextvault/
   core/              # config, security (Argon2), crypto (Fernet), JWT tokens
   db/                # Base metadata + async engine/session
   api/               # routers (auth, invitations, users, repositories, grants, sources,
-                     #   query, knowledge_gaps, analytics, health) + deps
-  models/            # ORM models (users, repositories, sources, chunks, grants, query_log)
+                     #   query, conversations, knowledge_gaps, analytics, health) + deps
+  models/            # ORM models (users, repositories, sources, chunks, grants, query_log,
+                     #   conversation, conversation_turn, gap_rejection)
   retrieval/         # access-filtered vector search + question→chunks service
   llm/               # provider interface + Answer/Citation schema + providers + factory
-  services/          # users, bootstrap, grants, invitations, ingestion, knowledge_gaps, analytics
+  services/          # users, bootstrap, grants, invitations, ingestion, conversations,
+                     #   knowledge_gaps, analytics
 migrations/          # Alembic (env.py + versions/)
 dev.sh               # one-command local stack
 tests/               # pytest suite
