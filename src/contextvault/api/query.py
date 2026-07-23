@@ -33,10 +33,29 @@ from contextvault.services.query_log import log_query
 router = APIRouter(tags=["query"])
 
 
-class QueryRequest(BaseModel):
-    """A user's question against one repository."""
+# Cap how many prior turns are threaded into a request, so a long conversation
+# can't grow the prompt (and token cost) without bound. The most recent turns
+# carry the most relevant context, so we keep the tail.
+MAX_HISTORY_TURNS = 10
+
+
+class ConversationTurn(BaseModel):
+    """One prior exchange in the same conversation, sent back for context."""
 
     question: str = Field(min_length=1)
+    answer: str
+
+
+class QueryRequest(BaseModel):
+    """A user's question against one repository, with optional conversation history.
+
+    ``history`` is the prior turns of this chat (oldest first). It lets a follow-up
+    question resolve references to earlier turns; it is context only and never
+    becomes a citable source. Only the most recent ``MAX_HISTORY_TURNS`` are used.
+    """
+
+    question: str = Field(min_length=1)
+    history: list[ConversationTurn] = Field(default_factory=list)
 
 
 class CitationResponse(BaseModel):
@@ -162,14 +181,24 @@ async def query_repository(
         )
     provider = build_provider(repo)
 
+    history = [(turn.question, turn.answer) for turn in payload.history[-MAX_HISTORY_TURNS:]]
+
+    # Contextualise retrieval for follow-ups: a terse question like "and for
+    # part-timers?" embeds poorly alone, so prepend the previous question so the
+    # vector search lands on the same topic. This shapes retrieval only — the
+    # answered and logged question stays the raw one the user typed.
+    retrieval_question = payload.question
+    if history:
+        retrieval_question = f"{history[-1][0]}\n{payload.question}"
+
     result = await retrieve(
         session,
-        question=payload.question,
+        question=retrieval_question,
         repository_id=repository_id,
         user_id=user.id,
         embedder=embedder,
     )
-    answer = await provider.answer(payload.question, result.chunks)
+    answer = await provider.answer(payload.question, result.chunks, history)
 
     # Log the query — the raw material for the gap dashboard (#31) and analytics
     # (#33): who asked, against which repo, the retrieval signal, and whether the

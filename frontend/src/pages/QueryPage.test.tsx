@@ -74,7 +74,7 @@ describe("QueryPage", () => {
     await screen.findByLabelText("Repository");
 
     await userEvent.type(screen.getByLabelText("Question"), "How long is retention?");
-    await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await screen.findByText(/Retention is 30 days/);
     expect(screen.getByText("Retention Policy")).toBeInTheDocument();
@@ -87,12 +87,63 @@ describe("QueryPage", () => {
     expect(String(posted?.[0])).toContain("/repositories/r-1/query");
   });
 
+  it("sends the running conversation history on a follow-up question", async () => {
+    mock(REPOS);
+    render(<QueryPage />);
+    await screen.findByLabelText("Repository");
+
+    // First turn.
+    await userEvent.type(screen.getByLabelText("Question"), "What is the PTO policy?");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(/Retention is 30 days/);
+
+    // Follow-up turn.
+    await userEvent.type(screen.getByLabelText("Question"), "and for part-timers?");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const queryCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes("/query"));
+    expect(queryCalls).toHaveLength(2);
+    // The first request carries no history; the follow-up carries the prior turn.
+    expect(JSON.parse(String(queryCalls[0][1]?.body))).toEqual({
+      question: "What is the PTO policy?",
+      history: [],
+    });
+    expect(JSON.parse(String(queryCalls[1][1]?.body))).toEqual({
+      question: "and for part-timers?",
+      history: [{ question: "What is the PTO policy?", answer: CITED.answer }],
+    });
+  });
+
+  it("starts a fresh conversation when the repository changes", async () => {
+    mock(REPOS);
+    render(<QueryPage />);
+    const picker = await screen.findByLabelText("Repository");
+
+    await userEvent.type(screen.getByLabelText("Question"), "How long is retention?");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText(/Retention is 30 days/);
+
+    // Switching repositories clears the transcript...
+    await userEvent.selectOptions(picker, "r-2");
+    expect(screen.queryByText(/Retention is 30 days/)).not.toBeInTheDocument();
+
+    // ...so the next question is sent with no carried-over history.
+    await userEvent.type(screen.getByLabelText("Question"), "fresh start?");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    const lastQuery = fetchMock.mock.calls.filter((c) => String(c[0]).includes("/query")).at(-1);
+    expect(String(lastQuery?.[0])).toContain("/repositories/r-2/query");
+    expect(JSON.parse(String(lastQuery?.[1]?.body))).toEqual({
+      question: "fresh start?",
+      history: [],
+    });
+  });
+
   it("highlights the matching source when a citation is clicked", async () => {
     mock(REPOS);
     render(<QueryPage />);
     await screen.findByLabelText("Repository");
     await userEvent.type(screen.getByLabelText("Question"), "retention?");
-    await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText(/Retention is 30 days/);
 
     expect(screen.getByTestId("source-s-1")).not.toHaveClass("highlighted");
@@ -111,7 +162,7 @@ describe("QueryPage", () => {
     render(<QueryPage />);
     await screen.findByLabelText("Repository");
     await userEvent.type(screen.getByLabelText("Question"), "unknown thing?");
-    await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent(/not in this vault/i);
   });

@@ -304,48 +304,116 @@ label {
   font-size: 0.85rem;
 }
 
-/* ---- query page ----------------------------------------------------------- */
-.query-page h1 {
-  font-size: 2rem;
-}
-.query-page > select {
-  max-width: 320px;
-}
-.ask-form {
+/* ---- query page — chat ---------------------------------------------------- */
+.query-page.chat {
+  /* Fill the viewport below the app header so the composer can pin to the bottom
+     and only the message log scrolls. */
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  margin-top: 1.5rem;
-  padding: 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  gap: 0;
+  height: calc(100vh - 8rem);
+  min-height: 24rem;
 }
-.ask-form button {
-  align-self: flex-start;
+.chat-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.chat-header h1 {
+  font-size: 1.6rem;
+  margin: 0;
+}
+.chat-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.chat-repo select {
+  max-width: 260px;
 }
 
-.conversation {
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  margin-top: 1.75rem;
+  gap: 1rem;
+  padding: 1.25rem 0.25rem;
 }
+.chat-empty {
+  margin: auto;
+  max-width: 32rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* Each turn stacks the user's question and the assistant's answer as bubbles. */
 .turn {
-  padding: 1.25rem 1.4rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.msg-row {
+  display: flex;
+}
+.msg-row.user {
+  justify-content: flex-end;
+}
+.msg-row.assistant {
+  justify-content: flex-start;
+}
+.bubble {
+  max-width: min(80%, 46rem);
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
+  line-height: 1.6;
 }
-.turn-question {
-  font-weight: 650;
-  color: var(--text);
-  margin: 0 0 0.85rem;
-  padding-left: 0.75rem;
-  border-left: 3px solid var(--accent);
+.msg-row.user .bubble {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: var(--radius-sm);
+  white-space: pre-wrap;
 }
+.msg-row.assistant .bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-bottom-left-radius: var(--radius-sm);
+}
+.bubble.thinking {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+.composer-row textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 2.6rem;
+  max-height: 12rem;
+}
+.composer-row button {
+  flex-shrink: 0;
+}
+
 .answer-text {
   margin: 0;
   line-height: 1.65;

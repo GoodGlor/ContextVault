@@ -54,7 +54,12 @@ class RecordingProvider:
     """Fake ``LLMProvider``: grounded cited answer when given chunks, the honest
     ``not_in_vault`` answer when given none."""
 
-    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[tuple[str, str]] = (),
+    ) -> Answer:
         if not chunks:
             return not_in_vault_answer()
         first = chunks[0]

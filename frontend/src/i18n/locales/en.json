@@ -51,8 +51,11 @@
     "repository": "Repository",
     "question": "Question",
     "questionPlaceholder": "Ask anything grounded in this repository…",
-    "asking": "Asking…",
+    "messagePlaceholder": "Message this repository…",
+    "emptyChat": "Ask anything grounded in this repository. Follow-up questions keep the conversation's context.",
+    "asking": "Thinking…",
     "ask": "Ask",
+    "send": "Send",
     "failedRepos": "Failed to load repositories."
   },
   "queryTurn": {

@@ -37,7 +37,12 @@ class _FakeProvider:
     vault" answer and no citations.
     """
 
-    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[tuple[str, str]] = (),
+    ) -> Answer:
         if not chunks:
             return Answer(text="I don't have that in this vault.", citations=[])
         citations = [

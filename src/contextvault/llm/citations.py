@@ -31,6 +31,10 @@ SYSTEM_PROMPT = (
     "prior knowledge.\n\n"
     "Cite every claim with the bracketed number of the source it draws from — "
     "e.g. [1], or [2] — citing multiple sources where they apply.\n\n"
+    "Earlier turns of the conversation may be included for context. Use them only "
+    "to understand what the current question refers to (e.g. resolving 'it' or "
+    "'that'); never treat an earlier answer as a source, and cite only the numbered "
+    "sources below.\n\n"
     "If the sources do not contain the answer, say plainly that the answer is not "
     "in this vault. Do not answer from your own knowledge, and do not invent "
     "citations."
@@ -58,9 +62,30 @@ def format_sources(chunks: Sequence[RetrievedChunk]) -> str:
     return "\n\n".join(f"[{i}] {chunk.content}" for i, chunk in enumerate(chunks, start=1))
 
 
-def build_user_message(question: str, chunks: Sequence[RetrievedChunk]) -> str:
-    """Compose the user turn: the numbered sources followed by the question."""
-    return f"Sources:\n{format_sources(chunks)}\n\nQuestion: {question}"
+def format_history(history: Sequence[tuple[str, str]]) -> str:
+    """Lay prior turns out as alternating ``User:`` / ``Assistant:`` lines."""
+    return "\n".join(f"User: {question}\nAssistant: {answer}" for question, answer in history)
+
+
+def build_user_message(
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    history: Sequence[tuple[str, str]] = (),
+) -> str:
+    """Compose the user turn: optional conversation context, the numbered sources,
+    then the question.
+
+    ``history`` is prior ``(question, answer)`` exchanges, oldest first. When
+    present it is rendered as a "Conversation so far" preamble so the model can
+    resolve references in a follow-up question — it is context only, never a source
+    (see ``SYSTEM_PROMPT``).
+    """
+    parts: list[str] = []
+    if history:
+        parts.append(f"Conversation so far:\n{format_history(history)}")
+    parts.append(f"Sources:\n{format_sources(chunks)}")
+    parts.append(f"Question: {question}")
+    return "\n\n".join(parts)
 
 
 def parse_citations(text: str, chunks: Sequence[RetrievedChunk]) -> list[Citation]:

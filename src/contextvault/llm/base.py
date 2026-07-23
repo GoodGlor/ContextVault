@@ -73,7 +73,12 @@ class Answer:
 class LLMProvider(Protocol):
     """Generates a grounded, cited answer from a question and its chunks."""
 
-    async def answer(self, question: str, chunks: Sequence[RetrievedChunk]) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        chunks: Sequence[RetrievedChunk],
+        history: Sequence[tuple[str, str]] = (),
+    ) -> Answer:
         """Answer ``question`` grounded in ``chunks``, citing them by number.
 
         ``chunks`` are the retrieved passages, ranked most relevant first; the
@@ -83,5 +88,10 @@ class LLMProvider(Protocol):
         return the honest "not in this vault" answer — text explaining the
         repository doesn't cover the question, ``not_in_vault=True``, and no
         citations — rather than answering from the model's own knowledge.
+
+        ``history`` is prior ``(question, answer)`` exchanges in the same
+        conversation, oldest first — context the provider passes to the model so a
+        follow-up's references resolve. It never becomes a citable source: the
+        answer is still grounded only in ``chunks``.
         """
         ...

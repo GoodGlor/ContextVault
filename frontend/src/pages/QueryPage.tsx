@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { listRepositories, type Repository } from "../api/repositories";
@@ -24,6 +24,7 @@ export function QueryPage(): ReactNode {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const turnSeq = useRef(0);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,14 +43,29 @@ export function QueryPage(): ReactNode {
     };
   }, [t]);
 
-  const onAsk = async (e: FormEvent) => {
-    e.preventDefault();
+  // Keep the newest message in view as the conversation grows. (scrollIntoView is
+  // unimplemented in jsdom; the optional call no-ops in tests.)
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+  }, [turns, asking]);
+
+  // A conversation belongs to one repository, so switching repos starts fresh —
+  // stale history would mislead the next answer's context.
+  const onSelectRepo = (id: string) => {
+    setSelected(id);
+    setTurns([]);
+    setAskError(null);
+  };
+
+  const submit = async () => {
     const q = question.trim();
-    if (selected === "" || q === "") return;
+    if (selected === "" || q === "" || asking) return;
     setAsking(true);
     setAskError(null);
+    // Send the running conversation (this repo's turns) so follow-ups have context.
+    const history = turns.map((turn) => ({ question: turn.question, answer: turn.result.answer }));
     try {
-      const result = await queryRepository(selected, q);
+      const result = await queryRepository(selected, q, history);
       turnSeq.current += 1;
       setTurns((prev) => [
         ...prev,
@@ -60,6 +76,19 @@ export function QueryPage(): ReactNode {
       setAskError(err instanceof ApiError ? err.detail : t("common.somethingWrong"));
     } finally {
       setAsking(false);
+    }
+  };
+
+  const onAsk = (e: FormEvent) => {
+    e.preventDefault();
+    void submit();
+  };
+
+  // Enter sends; Shift+Enter inserts a newline (standard chat-composer behaviour).
+  const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void submit();
     }
   };
 
@@ -91,27 +120,15 @@ export function QueryPage(): ReactNode {
   }
 
   return (
-    <div className="page query-page">
-      <h1>{t("query.title")}</h1>
-
-      <div className="conversation">
-        {turns.map((turn) => (
-          <QueryTurn
-            key={turn.id}
-            question={turn.question}
-            result={turn.result}
-            repositoryId={turn.repositoryId}
-          />
-        ))}
-      </div>
-
-      <form className="ask-form" onSubmit={onAsk}>
-        <label>
+    <div className="page query-page chat">
+      <div className="chat-header">
+        <h1>{t("query.title")}</h1>
+        <label className="chat-repo">
           {t("query.repository")}
           <select
             aria-label={t("query.repository")}
             value={selected}
-            onChange={(e) => setSelected(e.target.value)}
+            onChange={(e) => onSelectRepo(e.target.value)}
           >
             {repos.map((r) => (
               <option key={r.id} value={r.id}>
@@ -120,25 +137,49 @@ export function QueryPage(): ReactNode {
             ))}
           </select>
         </label>
-        <label>
-          {t("query.question")}
-          <textarea
-            aria-label={t("query.question")}
-            rows={3}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder={t("query.questionPlaceholder")}
-            required
+      </div>
+
+      <div className="chat-log">
+        {turns.length === 0 && !asking && <p className="chat-empty">{t("query.emptyChat")}</p>}
+        {turns.map((turn) => (
+          <QueryTurn
+            key={turn.id}
+            question={turn.question}
+            result={turn.result}
+            repositoryId={turn.repositoryId}
           />
-        </label>
+        ))}
+        {asking && (
+          <div className="turn">
+            <div className="msg-row assistant">
+              <div className="bubble thinking" role="status">
+                {t("query.asking")}
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <form className="chat-composer" onSubmit={onAsk}>
         {askError !== null && (
           <p className="form-error" role="alert">
             {askError}
           </p>
         )}
-        <button type="submit" disabled={asking}>
-          {asking ? t("query.asking") : t("query.ask")}
-        </button>
+        <div className="composer-row">
+          <textarea
+            aria-label={t("query.question")}
+            rows={1}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={onComposerKeyDown}
+            placeholder={t("query.messagePlaceholder")}
+          />
+          <button type="submit" disabled={asking || question.trim() === ""}>
+            {asking ? t("query.asking") : t("query.send")}
+          </button>
+        </div>
       </form>
     </div>
   );

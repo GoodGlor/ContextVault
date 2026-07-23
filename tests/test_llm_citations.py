@@ -14,6 +14,7 @@ from contextvault.llm.citations import (
     NOT_IN_VAULT,
     SYSTEM_PROMPT,
     build_user_message,
+    format_history,
     format_sources,
     not_in_vault_answer,
     parse_citations,
@@ -65,6 +66,39 @@ def test_build_user_message_carries_numbered_sources_and_question() -> None:
     assert "[1]" in message and "passage 0" in message
     assert "[2]" in message and "passage 1" in message
     assert "what is x?" in message
+
+
+def test_build_user_message_without_history_has_no_conversation_preamble() -> None:
+    message = build_user_message("what is x?", [_chunk(0)])
+    assert "Conversation so far" not in message
+
+
+def test_system_prompt_forbids_treating_history_as_a_source() -> None:
+    system = SYSTEM_PROMPT.lower()
+    # History is context for interpreting the question, never a citable source.
+    assert "earlier" in system
+    assert "never treat an earlier answer as a source" in system
+
+
+def test_format_history_renders_alternating_user_assistant_lines() -> None:
+    text = format_history([("what is PTO?", "20 days [1]."), ("part-timers?", "Pro-rated [2].")])
+    assert "User: what is PTO?" in text
+    assert "Assistant: 20 days [1]." in text
+    # Oldest first, and the follow-up comes after.
+    assert text.index("what is PTO?") < text.index("part-timers?")
+
+
+def test_build_user_message_threads_history_before_sources_and_question() -> None:
+    message = build_user_message(
+        "and for part-timers?",
+        [_chunk(0)],
+        history=[("what is the PTO policy?", "Employees accrue 20 days [1].")],
+    )
+    assert "Conversation so far" in message
+    assert "what is the PTO policy?" in message
+    # Context precedes the current sources and question.
+    assert message.index("Conversation so far") < message.index("Sources:")
+    assert message.index("Sources:") < message.index("and for part-timers?")
 
 
 def test_parse_maps_markers_back_to_exact_source_spans() -> None:
