@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from contextvault.core.crypto import encrypt
 from contextvault.db.session import get_session
 from contextvault.main import create_app
-from contextvault.models import LLMProviderName, ProviderSetting, Repository, Role
+from contextvault.models import LLMProviderName, ProviderSetting, Repository, Role, User
+from contextvault.services import grants as grant_service
 from contextvault.services import users as user_service
 
 
@@ -78,6 +79,31 @@ async def test_admin_creates_repository(db_session: AsyncSession, client: AsyncC
     # Persisted.
     repo = await db_session.get(Repository, uuid.UUID(body["id"]))
     assert repo is not None and repo.name == "Handbook"
+
+
+async def test_create_grants_the_creating_admin_access(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    """Card #37 gap: without an auto-grant, the admin who just created the repo has
+    no Grant on it and can't use it until they grant it to themselves. Creating it
+    should immediately give the creator active access."""
+    token = await _token(client, db_session, Role.ADMIN)
+    admin = await user_service.get_user_by_username(db_session, "adminuser")
+    assert isinstance(admin, User)
+
+    resp = await client.post(
+        "/repositories",
+        json={"name": "Handbook"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    repo_id = uuid.UUID(resp.json()["id"])
+
+    assert await grant_service.has_active_grant(db_session, admin.id, repo_id) is True
+
+    picker = await client.get("/repositories", headers=_auth(token))
+    assert picker.status_code == 200
+    assert any(r["id"] == str(repo_id) for r in picker.json())
 
 
 async def test_create_defaults_description_to_null(

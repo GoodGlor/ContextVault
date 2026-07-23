@@ -225,6 +225,37 @@ async def test_admin_note_is_retrievable_and_cited_verified(
     assert source["author"] == "curator"  # cited to the admin's nickname
 
 
+async def test_admin_note_embeds_title_and_content(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    """A terse admin note (e.g. answering a knowledge gap) is titled with the
+    question and only its content holds the answer. Ingestion must embed the title
+    too, or a terse answer like "10 градусів" is ungroundable on its own. The stored
+    passage (what gets chunked + embedded) must carry both the title and the content."""
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "curator")
+    note = await client.post(
+        f"/repositories/{repo.id}/admin-notes",
+        json={"title": "яка погода в києві", "content": "10 градусів"},
+        headers=_auth(await _token(client, "curator")),
+    )
+    assert note.status_code == 201
+    note_id = note.json()["id"]
+
+    # Read back the stored passage via the API (ingestion set it to the text it
+    # chunked + embedded). A granted reader is required by the source-content route.
+    reader = await _user(db_session, Role.USER, "reader")
+    await _grant(db_session, reader.id, repo.id)
+    got = await client.get(
+        f"/repositories/{repo.id}/sources/{note_id}",
+        headers=_auth(await _token(client, "reader")),
+    )
+    assert got.status_code == 200
+    content = got.json()["content"]
+    assert "яка погода в києві" in content  # the title (question) is embedded, not just the answer
+    assert "10 градусів" in content
+
+
 async def test_uploaded_document_is_not_verified(
     db_session: AsyncSession, client: AsyncClient
 ) -> None:

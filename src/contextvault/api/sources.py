@@ -200,7 +200,7 @@ async def create_admin_note(
         run_ingestion,
         source.id,
         filename=_ADMIN_NOTE_FILENAME,
-        data=payload.content.encode("utf-8"),
+        data=f"{payload.title}\n\n{payload.content}".encode(),
         embedder=embedder,
         session_factory=session_factory,
     )

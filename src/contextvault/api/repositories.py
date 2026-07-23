@@ -153,13 +153,19 @@ async def list_repositories(
 @router.post("/repositories", status_code=status.HTTP_201_CREATED)
 async def create_repository(
     payload: RepositoryCreateRequest,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> AdminRepositoryResponse:
     """Create a repository (admin-only, card #37 / design spec §3). It starts
-    unconfigured — an admin must set its LLM provider/model/key before it can answer."""
+    unconfigured — an admin must set its LLM provider/model/key before it can answer.
+    The creating admin is granted access immediately, so they don't have to grant
+    themselves before they can use the repo they just made."""
     repo = Repository(name=payload.name, description=payload.description)
     session.add(repo)
+    await session.flush()  # populate repo.id (UUID default is applied on flush) before granting
+    await grant_service.grant_access(
+        session, user_id=admin.id, repository_id=repo.id, expires_at=None
+    )
     await session.commit()
     await session.refresh(repo)
     verified = await provider_service.verified_provider_names(session)
