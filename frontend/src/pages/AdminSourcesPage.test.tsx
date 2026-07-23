@@ -58,7 +58,13 @@ describe("AdminSourcesPage", () => {
       }
       if (/\/repositories\/[^/]+\/sources$/.test(url)) {
         if (method === "POST") {
-          return Promise.resolve(json(opts.uploaded ?? source({ status: "pending" }), 201));
+          if (opts.uploaded) return Promise.resolve(json(opts.uploaded, 201));
+          // Derive a unique source per upload from the posted file, so multi-file
+          // uploads yield distinct rows (distinct ids/titles) rather than collide.
+          const posted = (init?.body as FormData).get("file") as File;
+          return Promise.resolve(
+            json(source({ id: `s-${posted.name}`, title: posted.name, status: "pending" }), 201),
+          );
         }
         const src = opts.sources ?? [];
         const list = typeof src === "function" ? src(listCall++) : src;
@@ -87,7 +93,7 @@ describe("AdminSourcesPage", () => {
     await screen.findByRole("button", { name: "Upload" });
 
     const file = new File(["hello"], "handbook.pdf", { type: "application/pdf" });
-    await userEvent.upload(screen.getByLabelText("Document"), file);
+    await userEvent.upload(screen.getByLabelText("Documents"), file);
     await userEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     const posted = fetchMock.mock.calls.find(
@@ -98,6 +104,33 @@ describe("AdminSourcesPage", () => {
     // The newly uploaded source appears (pending).
     expect(await screen.findByText("handbook.pdf")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("uploads several files at once, one request each, and lists them all", async () => {
+    mock({ sources: [] });
+    render(<AdminSourcesPage />);
+    await screen.findByRole("button", { name: "Upload" });
+
+    const files = [
+      new File(["a"], "one.pdf", { type: "application/pdf" }),
+      new File(["b"], "two.txt", { type: "text/plain" }),
+      new File(["c"], "three.png", { type: "image/png" }),
+    ];
+    await userEvent.upload(screen.getByLabelText("Documents"), files);
+    // The button reflects the selection count.
+    await userEvent.click(screen.getByRole("button", { name: "Upload 3 files" }));
+
+    // One POST per file.
+    const posts = fetchMock.mock.calls.filter(
+      (c) => (c[1]?.method ?? "GET") === "POST" && String(c[0]).endsWith("/sources"),
+    );
+    expect(posts).toHaveLength(3);
+    const names = posts.map((c) => ((c[1]?.body as FormData).get("file") as File).name).sort();
+    expect(names).toEqual(["one.pdf", "three.png", "two.txt"]);
+    // All three appear in the list.
+    expect(await screen.findByText("one.pdf")).toBeInTheDocument();
+    expect(screen.getByText("two.txt")).toBeInTheDocument();
+    expect(screen.getByText("three.png")).toBeInTheDocument();
   });
 
   it("deletes a source", async () => {

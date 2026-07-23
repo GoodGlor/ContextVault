@@ -77,7 +77,7 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
 
   // --- Image source: uploading a text-less image creates a row tagged `image`
   // which OCR must reject per the text-only contract (ends FAILED). ---
-  await page.getByLabel("Document").setInputFiles({
+  await page.getByLabel("Documents").setInputFiles({
     name: "blank.png",
     mimeType: "image/png",
     buffer: BLANK_PNG,
@@ -97,7 +97,7 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
   // via pillow-heif. This one is text-less, so it too must reach the OCR
   // text-only failure ("No text found in image.") — proving HEIC decodes rather
   // than erroring at "Could not read image file." ---
-  await page.getByLabel("Document").setInputFiles({
+  await page.getByLabel("Documents").setInputFiles({
     name: "photo.heic",
     mimeType: "image/heic",
     buffer: BLANK_HEIC,

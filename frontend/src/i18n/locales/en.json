@@ -108,9 +108,10 @@
   "adminSources": {
     "title": "Sources",
     "repositoryLabel": "Repository",
-    "documentLabel": "Document",
-    "ocrHint": "Images are read with OCR — only text visible in the image is captured.",
+    "documentLabel": "Documents",
+    "ocrHint": "Select one or more files. Images are read with OCR — only text visible in the image is captured.",
     "uploadButton": "Upload",
+    "uploadButtonCount": "Upload {{n}} files",
     "webLinkLabel": "Web link",
     "urlPlaceholder": "https://example.com/article",
     "addLinkButton": "Add link",
@@ -126,6 +127,7 @@
     "errorLoadRepos": "Failed to load repositories.",
     "errorLoadSources": "Failed to load sources.",
     "errorUpload": "Upload failed.",
+    "errorUploadSome": "{{failed}} of {{total}} files failed to upload.",
     "errorAddLink": "Could not add the link.",
     "errorDelete": "Could not delete the source."
   },
