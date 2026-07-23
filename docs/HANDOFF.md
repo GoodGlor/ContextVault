@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-23 10:03 EEST (global provider keys + LLM-vision OCR)
+- **Last updated:** 2026-07-23 (Gemini embeddings — replace local torch embedder)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -11,31 +11,35 @@
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
 backend, React/Vite SPA), feature-complete.
 
-**Latest work — global provider keys + LLM-vision OCR (branch `feat/global-provider-keys`,
-merging as one PR).** Started from a real bug: Ukrainian image uploads produced gibberish.
-Root cause — the local OCR (RapidOCR) shipped a **Chinese+English-only** dictionary, so
-Cyrillic was transliterated to Latin lookalikes (`Оплата`→`OnnaTa`) and no search could
-match it. The fix reshaped LLM config along the way (owner's call):
-- **API keys are now global per-provider**, not per-repo. New `provider_settings` table +
-  `services/providers.py` + `GET/PUT/DELETE /admin/providers`. Saving a key **verifies it
-  live** (reuses `list_models`) before storing; stored masked; new **Providers** admin tab.
-- **A repo just picks a model** (`{provider, model}`, no key) from a provider that has a
-  verified key. `Repository.api_key_encrypted` **dropped** (migration `d4f1a2b7c9e0`);
-  `build_repo_llm` + query gate now resolve the key from `provider_settings`.
-- **Images are OCR'd by the repo's own vision model** (`llm/ocr.py` `transcribe_image`,
-  per-provider, HEIC→JPEG normalized so `IMG_*.HEIC` is accepted). Image upload to a repo
-  with no usable model is **blocked (409)**. Local RapidOCR removed (dep + `ocr.py` gone).
+**Latest work — Gemini embeddings replace the local torch embedder (branch
+`feat/gemini-embeddings`, built via superpowers SDD, not a board card).** Embeddings now
+run through the Gemini API (`gemini-embedding-001`, 1024-dim, asymmetric `task`:
+`RETRIEVAL_DOCUMENT` for ingestion, `RETRIEVAL_QUERY` for search) instead of a local
+`sentence-transformers`/bge-m3/torch model — no more GPU/CPU inference in-process, no
+torch serialization lock. The local embedder (`embeddings/local.py`) and its deps
+(`sentence-transformers`, `torch`) are **removed entirely**.
+- **A verified Gemini provider key is now required for both ingestion and query.**
+  `get_embedder` resolves the key from `provider_settings` (the global per-provider key
+  store from the previous session) and **409s** ("Gemini API key required...") when no
+  verified Gemini key is stored — fails fast before any upload or query work happens,
+  same pattern as the existing vision-OCR 409.
+- **Existing data must be re-ingested.** Old bge-m3 vectors are **not compatible** with
+  Gemini's embedding space — mixing them would silently corrupt retrieval (nearest-neighbor
+  search across two unrelated vector spaces). Before using this on an existing DB:
+  `TRUNCATE chunks;` then re-upload/re-ingest every source. No Alembic migration was added
+  (`embedding_dim` stays 1024, so the column shape is unchanged — only the vector *values*
+  are incompatible).
 
-Verified: backend **354✓**/1 skipped (ruff + `ruff format --check` + mypy clean), frontend
-**68✓** (lint/typecheck/format clean, build ok), e2e **4✓** (admin, sources, query, providers).
+Verified: backend **361✓** (ruff + `ruff format --check` + mypy clean).
 
-**Previous session** shipped #105–#110 (LLM config panel redesign #109, chat e2e #108,
-chat + memory #107, multi-file upload #106, visible-dropdown + green-CI #105) — see *History*.
-The one older open follow-up is SSRF DNS-rebinding hardening of the URL fetcher (from #100) —
-safe as-is (admin-only), card it + `/security-review` before non-admin exposure.
+**Previous session** shipped global provider keys + LLM-vision OCR (#111) — see *History*
+for #105–#110 before that. The one older open follow-up is SSRF DNS-rebinding hardening of
+the URL fetcher (from #100) — safe as-is (admin-only), card it + `/security-review` before
+non-admin exposure.
 
 **Pending owner step (not code):** after merge, delete all repos except **`NGU payments`**
-(dev instance cleanup the owner requested) — confirm the repo list first.
+(dev instance cleanup the owner requested) — confirm the repo list first. Also: **`TRUNCATE
+chunks`** and re-ingest sources once this branch is live, since old vectors are incompatible.
 
 ---
 
@@ -43,21 +47,59 @@ safe as-is (admin-only), card it + `/security-review` before non-admin exposure.
 
 | | Value |
 |---|---|
-| Current branch | `feat/global-provider-keys` (ahead of `main`; merging as one PR) |
-| `main` HEAD | `2344821` (#110, handoff wrap-up) — before this PR lands |
-| This branch | global provider keys + repo model-pick + LLM-vision OCR; RapidOCR removed; migration `d4f1a2b7c9e0` |
-| In flight | this PR (all checks green locally); then the owner's repo-cleanup step |
-| CI | green locally (backend ruff/format/mypy/pytest, frontend lint/typecheck/format/build); e2e run manually **4✓** |
+| Current branch | `feat/gemini-embeddings` (ahead of `main`; built via superpowers SDD) |
+| `main` HEAD | `5486fb4` (#111, global provider keys + LLM-vision OCR) — before this branch lands |
+| This branch | Gemini embeddings replace the local torch/`sentence-transformers` embedder; `get_embedder` 409s without a verified Gemini key; no new migration (`embedding_dim` unchanged at 1024) |
+| In flight | full backend gate green locally; not yet opened as a PR |
+| CI | green locally (backend ruff/format/mypy/pytest: **361✓**) |
 
 **Migration note:** `d4f1a2b7c9e0` creates `provider_settings` and **drops
 `repositories.api_key_encrypted`** — old per-repo keys are *not* migrated; re-enter each
 provider's key once in the new Providers tab. Round-trips (down/up) cleanly.
 
+**Data note (no migration, but action required):** the Gemini-embeddings branch changes
+what a chunk's vector *means*, not its column shape — no Alembic migration was added. Any
+`chunks` rows embedded with the old local bge-m3 model are vectors in a different space and
+will poison nearest-neighbor search if mixed with Gemini vectors. Before relying on this
+branch against an existing DB: `TRUNCATE chunks;` then re-ingest every source (re-upload
+documents / re-add web sources) so all chunks are embedded with Gemini.
+
 ---
 
 ## Done recently (this session)
 
-### Global provider keys + LLM-vision OCR — branch `feat/global-provider-keys` (merging)
+### Gemini embeddings replace the local torch embedder — branch `feat/gemini-embeddings` (built via superpowers SDD, not yet a PR)
+
+**Motivation:** drop the local `sentence-transformers`/bge-m3/torch embedder — it ran
+CPU/GPU inference in-process (slow, needed a serialization lock to avoid corrupting the GPU
+under concurrent upload, and was a heavy dependency). Replaced with the Gemini embedding API:
+- **`GeminiEmbeddingProvider`** (`embeddings/gemini.py`) implements the existing `Embedder`
+  protocol against `gemini-embedding-001` (1024-dim, matching `embedding_dim`), with
+  asymmetric `task` — `RETRIEVAL_DOCUMENT` when embedding ingested chunks, `RETRIEVAL_QUERY`
+  when embedding a search query — fails loud (raises) on an empty/malformed API response
+  rather than silently returning zero vectors.
+- **`get_embedder` (api/deps.py)** resolves the Gemini key from `provider_settings` (the
+  global per-provider key store from the previous session) and raises **409** ("Gemini API
+  key required...") when no verified Gemini key exists. It is a route dependency, so both
+  the upload endpoint and the query endpoint fail fast before doing any work.
+- **Local embedder removed.** `embeddings/local.py` and its torch serialization lock are
+  deleted; `sentence-transformers` and `torch` dropped as dependencies (`pyproject.toml`,
+  `uv.lock`); the stale `[[tool.mypy.overrides]]` for `sentence_transformers.*` removed too.
+- **Regression caught mid-plan:** the query endpoint's new 409 broke two password-recovery
+  bounce-probe tests that expected a 404 (the 409 from the embedder dependency fired first).
+  Fixed by seeding a verified Gemini key in those tests so the probe reaches the actual
+  404 handler being tested.
+
+Tests: new `test_embedder_dependency.py` (409 without a key, resolves with one); reworked
+`test_embeddings.py` for the Gemini provider (task types, empty-response handling);
+`test_sources_api.py` gained `test_upload_without_gemini_key_returns_409` — the one test in
+that file that does **not** override `get_embedder`, exercising the real 409 path end to end
+through the API layer. Backend **361✓**, mypy/ruff clean.
+
+**Action required before use against existing data:** see the *Data note* under Repo &
+branch state above — `TRUNCATE chunks` and re-ingest.
+
+### Global provider keys + LLM-vision OCR — branch `feat/global-provider-keys` (merged as #111)
 
 **Bug:** Ukrainian/Cyrillic image uploads ingested as gibberish (local RapidOCR dict is
 Chinese+English only). **Fix + reshape:**

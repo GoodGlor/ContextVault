@@ -61,10 +61,9 @@ python_version = "3.12"
 strict = true
 files = ["src", "tests"]
 
-# sentence-transformers and pillow-heif ship no type stubs; treat their imports as
-# untyped.
+# pillow-heif ships no type stubs; treat its imports as untyped.
 [[tool.mypy.overrides]]
-module = ["sentence_transformers.*", "pillow_heif.*"]
+module = ["pillow_heif.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
