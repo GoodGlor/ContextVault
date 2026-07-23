@@ -207,11 +207,11 @@
     "model": "Model",
     "loadingModels": "Loading models…",
     "loadModels": "Load models",
-    "chooseModel": "Choose a loaded model",
     "chooseModelPlaceholder": "Select a model…",
-    "modelsLoaded": "Loaded {{n}} models — pick one above or type your own.",
     "apiKey": "API key",
     "keyPlaceholder": "Enter a new key to replace the current one",
+    "replaceKey": "Replace key",
+    "cancelReplaceKey": "Cancel",
     "saveConfiguration": "Save configuration",
     "configurationSaved": "Configuration saved."
   },

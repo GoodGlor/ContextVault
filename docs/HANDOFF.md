@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-23 (multi-file upload + chat-with-memory + chat e2e)
+- **Last updated:** 2026-07-23 (LLM config panel redesign: single model dropdown + optional key)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`.
 
@@ -37,8 +37,8 @@ Also open (from #100, not carded): DNS-rebinding hardening of the URL fetcher �
 | | Value |
 |---|---|
 | Current branch | `main` (synced with origin, clean) |
-| `main` HEAD | Chat e2e (`query.spec.ts`), squash-merged; before it chat+memory (#107), multi-file upload (#106), #105 |
-| Last merged PR | chat e2e; before it #107 (chat + memory), #106 (multi-file upload), #105 (model-picker/CI/env) |
+| `main` HEAD | LLM config redesign (single model dropdown + optional key), squash-merged; before it chat e2e (#108), #107, #106 |
+| Last merged PR | LLM config redesign; before it chat e2e (#108), #107 (chat + memory), #106 (multi-file upload) |
 | In flight | none |
 | CI | **green** (was red #101–#104: prettier + a masked `vite.config.ts` typecheck error) |
 
@@ -50,6 +50,26 @@ and the old `feat/1-project-scaffolding` (all safe to `git branch -D`).
 ---
 
 ## Done recently (this session)
+
+### LLM config panel redesign — single model dropdown + optional key — squash-merged
+
+Fixes the config panel (`RepoConfigPanel` in `AdminRepositoriesPage.tsx`): a configured
+repo could not change its model because the API-key field was `required`, and the model was
+a free-text `<input>` plus a separate select. Now:
+- **Model is one field** — a single `<select>` showing the current model and the loaded
+  alternatives (the free-text `model-{id}` input is gone).
+- **Auto-load on open** — when the selected provider already has a relevant stored key, the
+  model list is fetched automatically (stored key), current model preselected.
+- **Key optional** — the key field only appears when there's no relevant stored key (new repo,
+  or a switched provider); an already-keyed provider shows **"Replace key"** instead. Saving a
+  model/provider change no longer requires re-entering the key.
+- **Backend:** `LLMConfigRequest.api_key` is now optional; `set_llm_config` keeps the stored
+  key when the key is omitted, and 400s only when no key exists at all.
+
+Tests: backend `test_repositories_api` (requires-key-when-none-stored 400, update-model-without-key
+keeps key) → 341✓; frontend `AdminRepositoriesPage.test` (unconfigured flow, configured
+change-without-key, Replace-key) → 65✓; new e2e `llm-config.spec.ts` (configure → change model
+without re-entering key, PUT carries no `api_key`) → e2e **4✓**.
 
 ### Multi-file upload on the admin Sources page — squash-merged
 

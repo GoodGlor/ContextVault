@@ -25,11 +25,17 @@ router = APIRouter(tags=["repositories"])
 
 
 class LLMConfigRequest(BaseModel):
-    """Admin-supplied LLM configuration for one repository."""
+    """Admin-supplied LLM configuration for one repository.
+
+    ``api_key`` is optional: once a repository has a stored key, an admin can change
+    its provider/model (or reload models) without re-entering the secret. Omit it (or
+    send blank) to keep the existing key; send a non-blank value to replace it. A
+    repository that has *no* stored key must supply one (enforced in the handler).
+    """
 
     provider: LLMProviderName
     model: str = Field(min_length=1)
-    api_key: str = Field(min_length=1)
+    api_key: str | None = None
 
 
 class ListModelsRequest(BaseModel):
@@ -220,11 +226,23 @@ async def set_llm_config(
     _: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> LLMConfigResponse:
-    """Set (or replace) a repository's LLM provider/model/key; key stored encrypted."""
+    """Set a repository's LLM provider/model, and optionally (re)set its key.
+
+    A supplied ``api_key`` is stored encrypted, replacing any existing one. When it is
+    omitted, the existing key is kept — so provider/model can be changed on their own.
+    A repository with no stored key must supply one (400 otherwise).
+    """
     repo = await _get_repo(session, repository_id)
+    key = (payload.api_key or "").strip()
+    if key:
+        repo.api_key_encrypted = encrypt(key)
+    elif repo.api_key_encrypted is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An API key is required to configure this repository.",
+        )
     repo.llm_provider = payload.provider
     repo.llm_model = payload.model
-    repo.api_key_encrypted = encrypt(payload.api_key)
     await session.commit()
     await session.refresh(repo)
     return _config_response(repo)

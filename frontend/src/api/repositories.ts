@@ -75,10 +75,11 @@ export function getLlmConfig(repositoryId: string): Promise<LLMConfig> {
   return api.get<LLMConfig>(`/repositories/${repositoryId}/llm-config`);
 }
 
-/** Set (or replace) a repository's LLM provider/model/key. */
+/** Set a repository's LLM provider/model, and optionally (re)set its key.
+ *  Omit `api_key` to keep the stored key (e.g. when only changing the model). */
 export function setLlmConfig(
   repositoryId: string,
-  input: { provider: LLMProvider; model: string; api_key: string },
+  input: { provider: LLMProvider; model: string; api_key?: string },
 ): Promise<LLMConfig> {
   return api.put<LLMConfig>(`/repositories/${repositoryId}/llm-config`, input);
 }

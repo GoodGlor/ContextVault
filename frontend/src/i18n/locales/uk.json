@@ -211,11 +211,11 @@
     "model": "Модель",
     "loadingModels": "Завантаження моделей…",
     "loadModels": "Завантажити моделі",
-    "chooseModel": "Оберіть завантажену модель",
     "chooseModelPlaceholder": "Виберіть модель…",
-    "modelsLoaded": "Завантажено моделей: {{n}} — оберіть вище або введіть власну.",
     "apiKey": "API-ключ",
     "keyPlaceholder": "Введіть новий ключ, щоб замінити поточний",
+    "replaceKey": "Замінити ключ",
+    "cancelReplaceKey": "Скасувати",
     "saveConfiguration": "Зберегти конфігурацію",
     "configurationSaved": "Конфігурацію збережено."
   },

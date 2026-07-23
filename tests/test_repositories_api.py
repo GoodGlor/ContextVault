@@ -181,15 +181,43 @@ async def test_set_config_rejects_unknown_provider(
     assert resp.status_code == 422
 
 
-async def test_set_config_rejects_blank_key(db_session: AsyncSession, client: AsyncClient) -> None:
+async def test_set_config_requires_a_key_when_none_is_stored(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    # A blank/omitted key on a repo that has never had one is a 400: there is
+    # nothing to fall back to.
     repo = await _repo(db_session)
     token = await _token(client, db_session, Role.ADMIN)
     resp = await client.put(
         f"/repositories/{repo.id}/llm-config",
-        json=_config(api_key=""),
+        json={"provider": "openai", "model": "gpt-4o"},
         headers=_auth(token),
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 400
+
+
+async def test_update_model_without_key_keeps_the_stored_key(
+    db_session: AsyncSession, client: AsyncClient
+) -> None:
+    # Once a key is stored, provider/model can change without re-sending it — the
+    # existing encrypted key is kept (card: admin can change model with key present).
+    repo = await _repo(db_session)
+    token = await _token(client, db_session, Role.ADMIN)
+    await client.put(f"/repositories/{repo.id}/llm-config", json=_config(), headers=_auth(token))
+
+    resp = await client.put(
+        f"/repositories/{repo.id}/llm-config",
+        json={"provider": "openai", "model": "gpt-4o-mini"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model"] == "gpt-4o-mini"
+    # The key is untouched — still stored, still the original.
+    assert body["api_key_masked"] == "sk-…•••4f2a"
+    await db_session.refresh(repo)
+    assert repo.api_key_encrypted is not None
+    assert decrypt(repo.api_key_encrypted) == _KEY
 
 
 # --- list-models endpoint (feature B) ---------------------------------------

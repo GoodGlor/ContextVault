@@ -118,16 +118,23 @@ describe("AdminRepositoriesPage", () => {
     expect(await screen.findByText("Wiki")).toBeInTheDocument();
   });
 
-  it("configures a repository's provider/model/key", async () => {
-    mock({ configs: { "r-2": UNCONFIGURED } });
+  it("configures an unconfigured repo: enter key, load models, pick one, save", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, models: ["claude-opus-4-8", "claude-sonnet-5"] });
     render(<AdminRepositoriesPage />);
     const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
 
     await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
 
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "anthropic");
-    await userEvent.type(screen.getByLabelText("Model"), "claude-opus-4-8");
+    // No stored key → the key field is required, and models can only load once it's entered.
     await userEvent.type(screen.getByLabelText("API key"), "sk-ant-secret123");
+    await userEvent.click(screen.getByRole("button", { name: "Load models" }));
+
+    // The single Model field (a <select>) is populated from the fetched list.
+    const modelSelect = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    await userEvent.selectOptions(modelSelect, "claude-opus-4-8");
+    expect(modelSelect.value).toBe("claude-opus-4-8");
+
     await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
 
     const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
@@ -137,11 +144,10 @@ describe("AdminRepositoriesPage", () => {
       model: "claude-opus-4-8",
       api_key: "sk-ant-secret123",
     });
-    // Success feedback after saving.
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
-  it("loads models into the dropdown and sends the entered provider/key", async () => {
+  it("loads models into the single Model dropdown and sends the entered provider/key", async () => {
     mock({ configs: { "r-2": UNCONFIGURED }, models: ["claude-opus-4-8", "claude-sonnet-5"] });
     render(<AdminRepositoriesPage />);
     const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
@@ -160,15 +166,58 @@ describe("AdminRepositoriesPage", () => {
       provider: "anthropic",
       api_key: "sk-ant-secret123",
     });
-    // A visible dropdown of the returned models appears, plus a "Loaded N models" confirmation.
-    const dropdown = (await screen.findByLabelText("Choose a loaded model")) as HTMLSelectElement;
+    // The returned models are the options of the one Model field.
+    const dropdown = (await screen.findByLabelText("Model")) as HTMLSelectElement;
     expect(within(dropdown).getByRole("option", { name: "claude-opus-4-8" })).toBeInTheDocument();
     expect(within(dropdown).getByRole("option", { name: "claude-sonnet-5" })).toBeInTheDocument();
-    expect(screen.getByText(/loaded 2 models/i)).toBeInTheDocument();
-
-    // Picking a model from the dropdown fills the Model input.
     await userEvent.selectOptions(dropdown, "claude-sonnet-5");
-    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("claude-sonnet-5");
+    expect(dropdown.value).toBe("claude-sonnet-5");
+  });
+
+  it("changes the model of a configured repo without re-entering the key", async () => {
+    mock({ configs: { "r-1": CONFIGURED }, models: ["gpt-4o", "gpt-4o-mini"] });
+    render(<AdminRepositoriesPage />);
+    const handbook = (await screen.findByText("Handbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(handbook).getByRole("button", { name: "Configure" }));
+
+    // Auto-loaded on open: the Model dropdown holds the current model preselected.
+    const modelSelect = (await screen.findByLabelText("Model")) as HTMLSelectElement;
+    expect(modelSelect.value).toBe("gpt-4o");
+    // No API-key field — an already-keyed provider offers "Replace key" instead.
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replace key" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(modelSelect, "gpt-4o-mini");
+    await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
+
+    // Saved with the new model and NO api_key — the stored key is kept.
+    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
+    expect(String(put?.[0])).toContain("/repositories/r-1/llm-config");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({
+      provider: "openai",
+      model: "gpt-4o-mini",
+    });
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+  });
+
+  it("reveals the key field when replacing the key on a configured repo", async () => {
+    mock({ configs: { "r-1": CONFIGURED }, models: ["gpt-4o"] });
+    render(<AdminRepositoriesPage />);
+    const handbook = (await screen.findByText("Handbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(handbook).getByRole("button", { name: "Configure" }));
+    await screen.findByLabelText("Model");
+
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Replace key" }));
+    await userEvent.type(await screen.findByLabelText("API key"), "sk-new-key");
+    await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
+
+    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({
+      provider: "openai",
+      model: "gpt-4o",
+      api_key: "sk-new-key",
+    });
   });
 
   it("surfaces an error when loading models fails", async () => {
