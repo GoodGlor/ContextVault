@@ -18,15 +18,17 @@ repo — proving the bounce precedes endpoint logic.
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from contextvault.core.crypto import encrypt
 from contextvault.core.security import verify_password
 from contextvault.db.session import get_session
 from contextvault.main import create_app
-from contextvault.models import Role, User
+from contextvault.models import LLMProviderName, ProviderSetting, Role, User
 from contextvault.services import users as user_service
 
 
@@ -67,6 +69,23 @@ async def _token(client: AsyncClient, username: str, password: str = "pw") -> st
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+async def _seed_gemini_key(db_session: AsyncSession) -> None:
+    """A verified Gemini key so the query endpoint's embedder dependency resolves.
+
+    These tests probe /query only to prove the forced-change bounce; embeddings now
+    require a global Gemini key, so seed one to let the unflagged request reach the
+    404 handler instead of the 409 no-key gate.
+    """
+    db_session.add(
+        ProviderSetting(
+            provider=LLMProviderName.GEMINI,
+            api_key_encrypted=encrypt("test-key"),
+            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.flush()
 
 
 # --------------------------------------------------------------------------- #
@@ -148,6 +167,7 @@ async def test_flagged_user_is_bounced_from_protected_endpoint(
 async def test_unflagged_user_is_not_bounced(db_session: AsyncSession, client: AsyncClient) -> None:
     await _user(db_session, Role.USER, "ok")
     token = await _token(client, "ok")
+    await _seed_gemini_key(db_session)
     # No forced change: the request reaches the handler, which 404s the missing repo.
     resp = await client.post(
         f"/repositories/{uuid.uuid4()}/query", json={"question": "hi"}, headers=_auth(token)
@@ -186,6 +206,7 @@ async def test_flagged_user_can_change_password_and_is_unblocked(
     assert stale.status_code == 401
 
     # And the previously-bounced endpoint now reaches its handler (404 missing repo).
+    await _seed_gemini_key(db_session)
     new_token = str(good.json()["access_token"])
     after = await client.post(
         f"/repositories/{uuid.uuid4()}/query", json={"question": "hi"}, headers=_auth(new_token)
