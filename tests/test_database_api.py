@@ -160,6 +160,53 @@ async def test_put_update_keeps_password_when_omitted(
     _assert_no_password_leak(second.json())
 
 
+async def test_put_update_keeps_exposed_schema_when_omitted(
+    db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_test_connection(**kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("contextvault.api.database.test_connection", fake_test_connection)
+
+    repo = await _repo(db_session)
+    await _user(db_session, Role.ADMIN, "admin_schema_keep")
+    token = await _token(client, "admin_schema_keep")
+
+    put_resp = await client.put(
+        f"/repositories/{repo.id}/database", json=_payload(), headers=_auth(token)
+    )
+    assert put_resp.status_code == 200
+
+    allow_list = [
+        {
+            "table": "orders",
+            "description": "Customer orders",
+            "columns": [{"name": "id", "description": "Primary key"}],
+        }
+    ]
+    patch_resp = await client.patch(
+        f"/repositories/{repo.id}/database/schema",
+        json={"exposed_schema": allow_list},
+        headers=_auth(token),
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["exposed_schema"] == allow_list
+
+    # Second PUT fixes the host but omits exposed_schema entirely — the
+    # curated allow-list set via PATCH must survive, not be wiped to [].
+    put_resp2 = await client.put(
+        f"/repositories/{repo.id}/database",
+        json=_payload(host="reporting3.internal"),
+        headers=_auth(token),
+    )
+    assert put_resp2.status_code == 200
+    assert put_resp2.json()["exposed_schema"] == allow_list
+
+    got = await client.get(f"/repositories/{repo.id}/database", headers=_auth(token))
+    assert got.status_code == 200
+    assert got.json()["exposed_schema"] == allow_list
+
+
 async def test_put_rejects_unreachable_database(
     db_session: AsyncSession, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -295,11 +342,15 @@ async def test_patch_schema_saves_allow_list(
         headers=_auth(token),
     )
     assert patch_resp.status_code == 200
-    assert patch_resp.json()["exposed_schema"] == allow_list
+    patch_body = patch_resp.json()
+    _assert_no_password_leak(patch_body)
+    assert patch_body["exposed_schema"] == allow_list
 
     got = await client.get(f"/repositories/{repo.id}/database", headers=_auth(token))
     assert got.status_code == 200
-    assert got.json()["exposed_schema"] == allow_list
+    got_body = got.json()
+    _assert_no_password_leak(got_body)
+    assert got_body["exposed_schema"] == allow_list
 
 
 # --------------------------------------------------------------------------- #
@@ -343,7 +394,9 @@ async def test_introspect_uses_stored_connection(
 
     resp = await client.post(f"/repositories/{repo.id}/database/introspect", headers=_auth(token))
     assert resp.status_code == 200
-    assert resp.json() == {"schema": fixed_schema}
+    resp_body = resp.json()
+    _assert_no_password_leak(resp_body)
+    assert resp_body == {"schema": fixed_schema}
     assert seen_kwargs[0]["password"] == "s3cret"
     assert seen_kwargs[0]["host"] == "reporting.internal"
 

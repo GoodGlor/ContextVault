@@ -34,6 +34,12 @@ class DatabaseConnectionRequest(BaseModel):
     stored (encrypted) password rather than wiping it, so an admin can fix a
     typo'd host without re-entering the secret. It is required the first time a
     repository's connection is created (there is nothing stored yet to keep).
+
+    ``exposed_schema`` is likewise optional on update — omitted (``None``)
+    keeps the currently stored allow-list rather than wiping it, so an admin
+    can fix a typo'd host without re-curating the allow-list set earlier via
+    introspect + ``PATCH .../schema``. Only an explicit list (including ``[]``)
+    replaces it.
     """
 
     db_type: DatabaseType
@@ -42,7 +48,7 @@ class DatabaseConnectionRequest(BaseModel):
     database: str = Field(min_length=1)
     username: str = Field(min_length=1)
     password: str = ""
-    exposed_schema: list[dict[str, Any]] = Field(default_factory=list)
+    exposed_schema: list[dict[str, Any]] | None = None
 
 
 class SchemaUpdateRequest(BaseModel):
@@ -114,7 +120,9 @@ async def set_database_connection(
     (upsert — one row per repository, card #9). A connection that can't be
     reached is never stored: ``test_connection`` runs first and a
     :class:`DBConnectionError` becomes a 400 with its detail before anything is
-    written. An omitted/empty password keeps the connection's current one."""
+    written. An omitted/empty password keeps the connection's current one, and
+    an omitted ``exposed_schema`` likewise keeps the connection's currently
+    stored allow-list rather than wiping it."""
     await _get_repo(session, repository_id)
     existing = await _get_connection(session, repository_id)
 
@@ -141,7 +149,10 @@ async def set_database_connection(
 
     if existing is None:
         existing = DatabaseConnection(repository_id=repository_id, created_by=admin.id)
+        existing.exposed_schema = payload.exposed_schema or []
         session.add(existing)
+    elif payload.exposed_schema is not None:
+        existing.exposed_schema = payload.exposed_schema
 
     existing.db_type = payload.db_type
     existing.host = payload.host
@@ -149,7 +160,6 @@ async def set_database_connection(
     existing.database = payload.database
     existing.username = payload.username
     existing.password_encrypted = encrypt(password)
-    existing.exposed_schema = payload.exposed_schema
 
     await session.flush()  # populate existing.id (UUID default) on create, before use below
     await session.commit()
