@@ -15,7 +15,7 @@ export function listRepositories(): Promise<Repository[]> {
 // --- admin repository management (card #37) ---------------------------------
 
 // Mirrors LLMProviderName in src/contextvault/models/enums.py.
-export type LLMProvider = "gemini" | "openai" | "openrouter" | "anthropic";
+export type LLMProvider = "gemini" | "openai" | "openrouter" | "anthropic" | "custom";
 
 /** Display labels for the provider select, in a stable order. */
 export const LLM_PROVIDERS: { value: LLMProvider; label: string }[] = [
@@ -23,6 +23,7 @@ export const LLM_PROVIDERS: { value: LLMProvider; label: string }[] = [
   { value: "openai", label: "OpenAI" },
   { value: "gemini", label: "Google (Gemini)" },
   { value: "openrouter", label: "OpenRouter" },
+  { value: "custom", label: "Custom (local / self-hosted)" },
 ];
 
 // Mirrors AdminRepositoryResponse in src/contextvault/api/repositories.py.
