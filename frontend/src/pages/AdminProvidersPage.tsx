@@ -105,7 +105,13 @@ function ProviderRow({
     try {
       await deleteProviderKey(status.provider);
       setBaseUrl("");
-      onChanged({ ...status, configured: false, verified: false, api_key_masked: null, base_url: null });
+      onChanged({
+        ...status,
+        configured: false,
+        verified: false,
+        api_key_masked: null,
+        base_url: null,
+      });
     } catch (err) {
       setError(errorMessage(err, t("providers.couldNotRemove")));
     } finally {

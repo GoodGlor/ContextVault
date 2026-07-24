@@ -12,7 +12,13 @@ function json(body: unknown, status = 200): Response {
 }
 
 const ROWS: ProviderStatus[] = [
-  { provider: "anthropic", configured: false, verified: false, api_key_masked: null, base_url: null },
+  {
+    provider: "anthropic",
+    configured: false,
+    verified: false,
+    api_key_masked: null,
+    base_url: null,
+  },
   {
     provider: "openai",
     configured: true,
@@ -133,10 +139,7 @@ describe("AdminProvidersPage", () => {
     ).toBeInTheDocument();
     expect(within(custom).getByLabelText("API key (optional)")).toBeInTheDocument();
 
-    await userEvent.type(
-      within(custom).getByLabelText("Base URL"),
-      "http://localhost:11434/v1",
-    );
+    await userEvent.type(within(custom).getByLabelText("Base URL"), "http://localhost:11434/v1");
     await userEvent.click(within(custom).getByRole("button", { name: "Save key" }));
 
     const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
