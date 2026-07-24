@@ -68,7 +68,7 @@ export function ReportsPage(): ReactNode {
 
   // Poll while anything is still generating; re-schedules each time the list
   // changes, and stops once every report has reached a terminal state — the same
-  // idiom as AdminSourcesPage's ingestion poll.
+  // idiom as SourcesPanel's ingestion poll.
   useEffect(() => {
     if (currentRepoId === "" || reports === null) return;
     if (!reports.some((r) => isGenerating(r.status))) return;

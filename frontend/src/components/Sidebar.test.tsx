@@ -6,7 +6,10 @@ import { RepositoryContext, type RepositoryContextValue } from "../repository/Re
 
 const roleRef = { current: "member" as "member" | "admin" };
 vi.mock("../auth/AuthContext", () => ({
-  useAuth: () => ({ session: { role: roleRef.current, username: "artem", userId: "1" }, logout: vi.fn() }),
+  useAuth: () => ({
+    session: { role: roleRef.current, username: "artem", userId: "1" },
+    logout: vi.fn(),
+  }),
 }));
 
 const repoValue: RepositoryContextValue = {

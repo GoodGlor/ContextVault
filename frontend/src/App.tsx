@@ -63,8 +63,14 @@ export function App(): ReactNode {
             </RequireAuth>
           }
         />
-        <Route path="/admin/sources" element={<Navigate to="/admin/data?tab=documents" replace />} />
-        <Route path="/admin/database" element={<Navigate to="/admin/data?tab=database" replace />} />
+        <Route
+          path="/admin/sources"
+          element={<Navigate to="/admin/data?tab=documents" replace />}
+        />
+        <Route
+          path="/admin/database"
+          element={<Navigate to="/admin/data?tab=database" replace />}
+        />
         <Route
           path="/admin/users"
           element={

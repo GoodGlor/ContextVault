@@ -741,7 +741,17 @@ in development (no CORS).
   by redirecting flagged users to `/change-password`.
 - **Routing** (`src/App.tsx`) — public auth screens (`/login`, `/accept-invite`,
   `/change-password`) sit outside the protected `Layout` shell that wraps the app's
-  authenticated pages.
+  authenticated pages. `Layout` renders a left **sidebar** (`src/components/Sidebar.tsx`)
+  alongside the routed page content; on narrow screens the sidebar collapses behind a
+  menu toggle. The sidebar groups navigation into *Workspace* (Ask, Reports, visible to
+  everyone), *Manage this repo* (Data, Providers, Insights, admin-only), and *Admin*
+  (Repositories, Users, admin-only).
+- **Current repository** (`src/repository/`) — `RepositoryProvider` owns the single
+  "current repository" for the whole app (admins see every repository, members only
+  their granted ones) and persists the selection to `localStorage`. The sidebar's
+  **repository switcher**, at the top above the nav groups, is the only place that
+  changes it; Ask, Reports, Data, and Insights all read it via the shared
+  `useCurrentRepository()` hook rather than each holding their own repo picker.
 
 **Auth screens** (card #35, `src/pages/`):
 
@@ -758,8 +768,9 @@ session on any `401`, bouncing the user back to `/login`.
 
 **Query experience** (card #36, the app's home page `/`):
 
-- **Repo picker** — `GET /repositories` lists only the repos the user holds an active
-  grant on; a user with none is told so instead of shown an empty box.
+- **Repository** — comes from the shared sidebar switcher (see Routing above), not a
+  picker on this page; a user with no granted repositories is told so instead of shown
+  an empty box.
 - **Ask + cited answer** — `POST /repositories/{id}/query` returns the answer, its
   `[n]` citations, and the cited sources. The answer's inline `[n]` markers render as
   clickable chips (`parseAnswer` splits them from text) that highlight and scroll to the
@@ -775,7 +786,8 @@ session on any `401`, bouncing the user back to `/login`.
   never loses history; a **Clear conversation** button deletes it (`DELETE …/conversation`).
   The client never sends history in the query request — the server is authoritative.
 
-**Admin surface** (cards #37–#40, admin-only pages, linked from the header nav for admins):
+**Admin surface** (cards #37–#40, admin-only pages, reached via the *Manage this repo*
+and *Admin* groups in the sidebar):
 
 - **Repositories** (`/admin/repositories`) — lists **all** repositories
   (`GET /admin/repositories`) with a Configured / Not configured badge; a form creates
@@ -785,11 +797,23 @@ session on any `401`, bouncing the user back to `/login`.
   it is never pre-filled, and the saved key comes back masked. Each repo can also be
   **renamed** (`PATCH /repositories/{id}`) or **deleted** (`DELETE /repositories/{id}`,
   confirmation-gated by echoing its name).
-- **Sources** (`/admin/sources`) — pick a repository, then **upload** a document
-  (`POST …/sources`, multipart) and watch it ingest: the list (`GET …/sources`) shows
-  each source's status (`pending` → `processing` → `done` / `failed`) and **auto-polls**
-  while anything is still ingesting, stopping once every source is terminal. A failed
-  source shows its ingestion error; each can be **deleted** (`DELETE /sources/{id}`).
+- **Data** (`/admin/data`) — one surface for the current repository (from the sidebar
+  switcher), split into two tabs (`SourcesPanel` / `DatabasePanel`, selected via
+  `?tab=documents|database` so each is linkable and survives reload). The older
+  `/admin/sources` and `/admin/database` routes now redirect here.
+  - *Documents & web* — **upload** a document (`POST …/sources`, multipart) or add a
+    **web link** (`POST …/web-sources`) and watch it ingest: the list (`GET …/sources`)
+    shows each source's status (`pending` → `processing` → `done` / `failed`) and
+    **auto-polls** while anything is still ingesting, stopping once every source is
+    terminal. A failed source shows its ingestion error; each can be **deleted**
+    (`DELETE /sources/{id}`).
+  - *Database* — **connect** a read-only reporting database (`PUT …/database`; the
+    password is write-only and never comes back — only host/database/username are
+    shown once connected) and **test** the connection by saving it; **introspect** its
+    live schema (`POST …/database/introspect`) into an editable **allow-list** of
+    tables/columns with descriptions for the report LLM, saved with
+    `PATCH …/database/schema`. The connection can be **deleted**
+    (`DELETE …/database`, confirmation-gated).
 
 - **Users & access** (`/admin/users`) — three panels over the account and grant
   APIs. *Invite* issues an onboarding invite (`POST /invitations`) and reveals the

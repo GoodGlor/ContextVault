@@ -63,7 +63,8 @@ export function SourcesPanel(): ReactNode {
     return () => clearTimeout(timer);
   }, [sources, currentRepoId]);
 
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => setFiles(Array.from(e.target.files ?? []));
+  const onFileChange = (e: ChangeEvent<HTMLInputElement>) =>
+    setFiles(Array.from(e.target.files ?? []));
 
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
@@ -78,13 +79,14 @@ export function SourcesPanel(): ReactNode {
     const failed = results.length - created.length;
     if (failed > 0) {
       const firstRejected = results.find((r) => r.status === "rejected") as
-        | PromiseRejectedResult
-        | undefined;
+        PromiseRejectedResult | undefined;
       const detail =
         created.length === 0 && firstRejected?.reason instanceof ApiError
           ? firstRejected.reason.detail
           : null;
-      setUploadError(detail ?? t("adminSources.errorUploadSome", { failed, total: results.length }));
+      setUploadError(
+        detail ?? t("adminSources.errorUploadSome", { failed, total: results.length }),
+      );
     } else {
       setFiles([]);
       if (fileInput.current) fileInput.current.value = "";

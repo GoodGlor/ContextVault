@@ -27,26 +27,49 @@ describe("AdminDataPage", () => {
   const fetchMock = vi.fn();
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockResolvedValue(new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }));
+    fetchMock.mockImplementation((url: string) => {
+      // The database endpoint reports "no connection yet" (404); everything
+      // else (the sources list) reports an empty list — either way, awaiting
+      // the settled state below lets each panel's mount-fetch effect resolve
+      // before the test ends, so no act(...) warning is printed.
+      if (/\/database$/.test(String(url))) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    });
   });
   afterEach(() => {
     fetchMock.mockReset();
     vi.unstubAllGlobals();
   });
 
-  it("shows the Documents tab selected by default", () => {
+  it("shows the Documents tab selected by default", async () => {
     renderData();
-    expect(screen.getByRole("tab", { name: /documents/i })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/no sources yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /documents/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
-  it("honors ?tab=database on load", () => {
+  it("honors ?tab=database on load", async () => {
     renderData("/admin/data?tab=database");
+    expect(await screen.findByLabelText(/host/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /database/i })).toHaveAttribute("aria-selected", "true");
   });
 
   it("switches tabs on click", async () => {
     renderData();
+    await screen.findByText(/no sources yet/i);
     await userEvent.click(screen.getByRole("tab", { name: /database/i }));
+    expect(await screen.findByLabelText(/host/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /database/i })).toHaveAttribute("aria-selected", "true");
   });
 });

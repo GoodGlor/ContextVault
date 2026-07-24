@@ -11,7 +11,10 @@ vi.mock("../auth/AuthContext", () => ({
 }));
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 function Probe() {
@@ -39,24 +42,48 @@ describe("RepositoryProvider", () => {
   });
 
   it("defaults to the first repo and calls the granted-list endpoint for members", async () => {
-    fetchMock.mockResolvedValue(json([{ id: "r-1", name: "A" }, { id: "r-2", name: "B" }]));
-    render(<RepositoryProvider><Probe /></RepositoryProvider>);
+    fetchMock.mockResolvedValue(
+      json([
+        { id: "r-1", name: "A" },
+        { id: "r-2", name: "B" },
+      ]),
+    );
+    render(
+      <RepositoryProvider>
+        <Probe />
+      </RepositoryProvider>,
+    );
     await waitFor(() => expect(screen.getByTestId("current")).toHaveTextContent("r-1"));
     expect(fetchMock.mock.calls[0][0]).toBe("/api/repositories");
   });
 
   it("uses the admin all-repos endpoint when the session is admin", async () => {
     roleRef.current = "admin";
-    fetchMock.mockResolvedValue(json([{ id: "r-1", name: "A", description: null, configured: true }]));
-    render(<RepositoryProvider><Probe /></RepositoryProvider>);
+    fetchMock.mockResolvedValue(
+      json([{ id: "r-1", name: "A", description: null, configured: true }]),
+    );
+    render(
+      <RepositoryProvider>
+        <Probe />
+      </RepositoryProvider>,
+    );
     await waitFor(() => expect(screen.getByTestId("count")).toHaveTextContent("1"));
     expect(fetchMock.mock.calls[0][0]).toBe("/api/admin/repositories");
   });
 
   it("restores a still-valid stored repo, and persists a new selection", async () => {
     localStorage.setItem("contextvault.currentRepo", "r-2");
-    fetchMock.mockResolvedValue(json([{ id: "r-1", name: "A" }, { id: "r-2", name: "B" }]));
-    render(<RepositoryProvider><Probe /></RepositoryProvider>);
+    fetchMock.mockResolvedValue(
+      json([
+        { id: "r-1", name: "A" },
+        { id: "r-2", name: "B" },
+      ]),
+    );
+    render(
+      <RepositoryProvider>
+        <Probe />
+      </RepositoryProvider>,
+    );
     await waitFor(() => expect(screen.getByTestId("current")).toHaveTextContent("r-2"));
     await act(() => userEvent.click(screen.getByText("pick2")));
     expect(localStorage.getItem("contextvault.currentRepo")).toBe("r-2");
@@ -65,7 +92,11 @@ describe("RepositoryProvider", () => {
   it("falls back to the first repo when the stored id is gone", async () => {
     localStorage.setItem("contextvault.currentRepo", "stale");
     fetchMock.mockResolvedValue(json([{ id: "r-1", name: "A" }]));
-    render(<RepositoryProvider><Probe /></RepositoryProvider>);
+    render(
+      <RepositoryProvider>
+        <Probe />
+      </RepositoryProvider>,
+    );
     await waitFor(() => expect(screen.getByTestId("current")).toHaveTextContent("r-1"));
   });
 });

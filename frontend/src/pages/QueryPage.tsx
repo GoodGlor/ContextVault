@@ -14,7 +14,8 @@ interface Turn {
   repositoryId: string;
 }
 
-/** The core user experience: pick a granted repo, ask, get a cited answer. */
+/** The core user experience: ask a question of the current repository (chosen
+ *  in the sidebar switcher) and get a cited answer. */
 export function QueryPage(): ReactNode {
   const { t } = useTranslation();
   const { repos, currentRepoId, loading, error } = useCurrentRepository();
