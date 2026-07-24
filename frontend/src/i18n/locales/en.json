@@ -15,7 +15,12 @@
     "sources": "Sources",
     "database": "Database",
     "users": "Users",
-    "insights": "Insights"
+    "insights": "Insights",
+    "groupWorkspace": "Workspace",
+    "groupManage": "Manage this repo",
+    "groupAdmin": "Admin",
+    "data": "Data",
+    "repository": "Repository"
   },
   "login": {
     "title": "Sign in",

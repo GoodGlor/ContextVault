@@ -15,7 +15,12 @@
     "sources": "Джерела",
     "database": "База даних",
     "users": "Користувачі",
-    "insights": "Аналітика"
+    "insights": "Аналітика",
+    "groupWorkspace": "Робочий простір",
+    "groupManage": "Керування репозиторієм",
+    "groupAdmin": "Адміністрування",
+    "data": "Дані",
+    "repository": "Репозиторій"
   },
   "login": {
     "title": "Увійти",
