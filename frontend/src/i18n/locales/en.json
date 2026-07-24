@@ -79,7 +79,6 @@
   },
   "insights": {
     "title": "Insights",
-    "loading": "Loading…",
     "knowledgeGapsAriaLabel": "Knowledge gaps",
     "knowledgeGaps": "Knowledge gaps",
     "noteSaved": "Admin Note saved for “{{question}}”. It will close the gap once ingested.",
