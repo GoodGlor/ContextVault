@@ -205,3 +205,44 @@ async def test_unknown_provider_in_path_422(db_session: AsyncSession, client: As
         "/admin/providers/not-a-provider", json={"api_key": _KEY}, headers=_auth(token)
     )
     assert resp.status_code == 422
+
+
+async def test_custom_requires_base_url(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_verify(monkeypatch, ok=True)
+    token = await _token(client, db_session, Role.ADMIN)
+    resp = await client.put(
+        "/admin/providers/custom", json={"api_key": None}, headers=_auth(token)
+    )
+    assert resp.status_code == 400
+    assert "base url" in resp.json()["detail"].lower()
+
+
+async def test_custom_saves_keyless_with_base_url(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_verify(monkeypatch, ok=True)
+    token = await _token(client, db_session, Role.ADMIN)
+    resp = await client.put(
+        "/admin/providers/custom",
+        json={"base_url": "http://localhost:11434/v1"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["provider"] == "custom"
+    assert body["verified"] is True
+    assert body["base_url"] == "http://localhost:11434/v1"
+    assert body["api_key_masked"] is None
+
+
+async def test_cloud_provider_still_requires_key(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_verify(monkeypatch, ok=True)
+    token = await _token(client, db_session, Role.ADMIN)
+    resp = await client.put(
+        "/admin/providers/openai", json={"base_url": None}, headers=_auth(token)
+    )
+    assert resp.status_code == 400

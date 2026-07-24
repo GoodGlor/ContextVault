@@ -12,7 +12,7 @@ without a key show ``configured: false`` — so the settings screen can render e
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import require_admin
@@ -25,9 +25,14 @@ router = APIRouter(tags=["providers"])
 
 
 class ProviderKeyRequest(BaseModel):
-    """The API key to store for a provider (verified before it is saved)."""
+    """The config to store for a provider (verified before it is saved).
 
-    api_key: str = Field(min_length=1)
+    ``api_key`` is optional so a keyless custom (OpenAI-compatible) endpoint can be
+    saved with only a ``base_url``; cloud providers still require a key (enforced in
+    the route, which knows the provider from the path)."""
+
+    api_key: str | None = None
+    base_url: str | None = None
 
 
 class ProviderStatusResponse(BaseModel):
@@ -37,16 +42,22 @@ class ProviderStatusResponse(BaseModel):
     configured: bool
     verified: bool
     api_key_masked: str | None
+    base_url: str | None
 
 
 def _status(provider: LLMProviderName, setting: ProviderSetting | None) -> ProviderStatusResponse:
     """Build a provider's status row, masking the stored key if present."""
-    masked = mask_key(decrypt(setting.api_key_encrypted)) if setting else None
+    masked = (
+        mask_key(decrypt(setting.api_key_encrypted))
+        if setting and setting.api_key_encrypted is not None
+        else None
+    )
     return ProviderStatusResponse(
         provider=provider,
         configured=setting is not None,
         verified=bool(setting and setting.verified_at is not None),
         api_key_masked=masked,
+        base_url=setting.base_url if setting else None,
     )
 
 
@@ -71,13 +82,24 @@ async def set_provider(
 
     The key is checked against the live provider; a key that does not work is rejected
     with 400 and nothing is stored. On success it is saved encrypted and marked verified.
+    A custom (OpenAI-compatible) endpoint requires a ``base_url`` but may be keyless;
+    cloud providers still require a key.
     """
-    key = payload.api_key.strip()
-    if not key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API key is required.")
+    key = (payload.api_key or "").strip() or None
+    base_url = (payload.base_url or "").strip() or None
+    if provider == LLMProviderName.CUSTOM:
+        if not base_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A base URL is required for a custom OpenAI-compatible endpoint.",
+            )
+    elif not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="API key is required."
+        )
     try:
         setting = await provider_service.set_provider_key(
-            session, provider, key, now=datetime.now(UTC)
+            session, provider, key, now=datetime.now(UTC), base_url=base_url
         )
     except provider_service.ProviderKeyInvalid as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
