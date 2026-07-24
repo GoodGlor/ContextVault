@@ -91,7 +91,10 @@ describe("api.getBlob", () => {
     );
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer tok-abc");
-    expect(blob).toBeInstanceOf(Blob);
+    // Assert on `.type`/`.size` rather than `toBeInstanceOf(Blob)`: under CI's fetch
+    // impl the response body's Blob comes from a different realm than the test's
+    // global Blob, so an identity check is flaky (passes locally, fails in CI). The
+    // shape properties are present on every Blob impl and are what callers rely on.
     expect(blob.type).toBe("application/pdf");
     expect(blob.size).toBeGreaterThan(0);
   });
