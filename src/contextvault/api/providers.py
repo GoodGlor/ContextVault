@@ -5,8 +5,11 @@ it against the live provider before storing (a bad key is rejected with 400 and 
 is saved); a stored key is returned only masked, never in full. Repositories then pick a
 model from whichever providers are *verified* (``/repositories/{id}/llm-config``).
 
-All routes are admin-only. The four providers always appear in the listing — those
+All routes are admin-only. The five providers always appear in the listing — those
 without a key show ``configured: false`` — so the settings screen can render every row.
+One of the five, ``custom`` (an OpenAI-compatible endpoint), is keyless-capable: it
+stores an admin-supplied ``base_url`` and an *optional* key rather than a mandatory
+one, so ``configured`` there reflects a saved ``base_url``, not a stored key.
 """
 
 from datetime import UTC, datetime
@@ -66,7 +69,7 @@ async def list_providers(
     _: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[ProviderStatusResponse]:
-    """List every provider with its key status (admin-only). Always four rows."""
+    """List every provider with its key status (admin-only). Always five rows."""
     by_provider = {s.provider: s for s in await provider_service.list_settings(session)}
     return [_status(p, by_provider.get(p)) for p in LLMProviderName]
 

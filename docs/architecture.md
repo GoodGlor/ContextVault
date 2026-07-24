@@ -154,6 +154,13 @@ authenticated) behind three helpers:
 - `mask_key(key)` — a display-safe preview (`sk-…•••4f2a`) for surfacing a stored
   key in the UI/API without ever re-showing it in full.
 
+One provider is the exception to "every key is mandatory": the `custom`
+(OpenAI-compatible) provider's key is **optional** (keyless local servers, e.g.
+Ollama, are supported) — its `provider_settings` row allows a `NULL`
+`api_key_encrypted`. Its `base_url`, unlike the key, is not a secret and is
+stored in plaintext alongside the (optional) encrypted key; see *Custom
+(OpenAI-compatible)*, below.
+
 The master key comes from `ENCRYPTION_KEY` (a Fernet key) in the environment or
 secrets — never in the database or the code. It is unset by default: encryption
 fails loudly instead of silently storing plaintext, so it must be set before any
@@ -178,6 +185,16 @@ uses Gemini's asymmetric task types (`RETRIEVAL_DOCUMENT` for ingested text,
 cosine similarity is a plain dot product. Embeddings are global — one vector space for
 every repository — so a verified global Gemini provider key is required; ingestion and
 query both fail fast (409) without one.
+
+**This coupling does not loosen when chat goes local.** A repository configured
+with the `custom` (OpenAI-compatible) LLM provider (see *Custom
+(OpenAI-compatible)*, below) still embeds through Gemini at ingestion time —
+embeddings are deployment-wide, not per-repository — so document text still
+leaves the network at index time even for a repository whose questions and
+answers never do. Decoupling embeddings from Gemini (a local embedding provider
+plus per-dimension vector storage) is tracked as Phase 2 of the
+[custom-provider spec](superpowers/specs/2026-07-24-custom-openai-compatible-provider.md#11-future-phases-direction-on-record-not-built-here),
+not built here.
 
 Swapping the model is a config change via `EMBEDDING_MODEL` and `EMBEDDING_DIM` —
 the two must match the model's requested output width and the pgvector column.
@@ -437,9 +454,10 @@ feature is used, so the citation experience is identical across providers. Empty
 without an API call, and an answer that cites none of its sources is flagged the
 same way. That numbered-chunk prompt/parse/map machinery lives in one shared module,
 [`contextvault.llm.citations`](#numbered-chunk-citation-scheme), which every
-provider imports. `get_llm_provider()` wires all four providers — **Gemini**,
-**OpenAI**, **OpenRouter**, and **Anthropic** — selectable by name (or, for the
-system default, via `LLM_PROVIDER`).
+provider imports. `get_llm_provider()` wires all five providers — **Gemini**,
+**OpenAI**, **OpenRouter**, **Anthropic**, and **Custom** (any self-hosted
+OpenAI-compatible server) — selectable by name (or, for the system default, via
+`LLM_PROVIDER`).
 
 #### Google (Gemini) — default
 
@@ -477,6 +495,56 @@ configured for Anthropic route to it. Configuration: `ANTHROPIC_API_KEY`
 authenticates the SDK, `ANTHROPIC_MODEL` selects the Claude model (default
 `claude-opus-4-8`), and `LLM_MAX_TOKENS` caps the answer length.
 
+#### Custom (OpenAI-compatible) — self-hosted / local
+
+**"Custom (OpenAI-compatible)"** lets a deployment point chat (and report
+generation, and image OCR) at an LLM it runs itself — Ollama, vLLM, LM Studio,
+TGI, LocalAI, or any server that speaks the OpenAI `/v1` API — instead of a
+cloud vendor. Full design in
+[`docs/superpowers/specs/2026-07-24-custom-openai-compatible-provider.md`](superpowers/specs/2026-07-24-custom-openai-compatible-provider.md).
+
+Unlike the four cloud providers, `custom` has no vendor SDK of its own: selecting
+it constructs `OpenAILLMProvider` directly, aimed at an admin-supplied
+`base_url` instead of OpenAI's endpoint — the same trick `OpenRouterLLMProvider`
+uses (by subclassing it) to reach OpenRouter's gateway. It is also **one global
+endpoint, not a per-vendor key**: an admin sets a `base_url` (stored on the
+`custom` row's `provider_settings.base_url`) plus an **optional** API key —
+`api_key_encrypted` is nullable for this row, so keyless local servers (the
+common Ollama case) are supported, unlike every cloud provider. OpenAI-compatible
+servers still require *some* non-empty `Authorization` header even when they
+ignore it, so when no key is stored a placeholder (`"sk-noauth"`) is sent
+instead — it is constructed only at call time and never persisted.
+
+One resolution seam feeds every call site that needs credentials for a provider:
+
+```python
+from contextvault.services.providers import get_call_credentials
+
+api_key, base_url = await get_call_credentials(session, provider)
+# custom, keyless: (NOAUTH_PLACEHOLDER, "http://localhost:11434/v1")
+# custom, keyed:   (decrypted key,      "http://localhost:11434/v1")
+# cloud providers: (decrypted key,      None)
+```
+
+`deps.build_repo_llm` (chat), `services/reports.py` (NL→SQL report generation),
+`services/ingestion.py` (image OCR), and the repository model-list endpoint all
+resolve a provider's key/endpoint through this one function, so there is a
+single place a base URL or key could go stale rather than four independent
+copies of the same lookup.
+
+The model is chosen **per repository**, the same mechanic as every other
+provider (`PUT`/`GET .../llm-config`): the model `<select>` loads from the
+endpoint's own `GET /v1/models` when the server exposes it, falling back to
+**free-text entry** for servers that don't (or for typing an arbitrary local
+model id directly).
+
+**The load-bearing caveat: this is not air-gapped.** Selecting `custom` moves
+only the *chat/report/OCR* model onto a self-hosted server — ingestion still
+calls **Gemini** to embed documents (see *Embeddings*, above), so document text
+still leaves the network at index time. Do not describe this provider as
+air-gapped or as keeping data off the network; removing the Gemini coupling is
+Phase 2 (local embeddings + per-dimension vector tables), not built here.
+
 #### Numbered-chunk citation scheme
 
 The one place the citation machinery lives — every provider imports it, so
@@ -497,7 +565,9 @@ from contextvault.llm.citations import (
 resolves each to its exact source span — taking markers in first-appearance
 order, collapsing repeats, and dropping any out-of-range (fabricated) marker so a
 `Citation` always points at a real retrieved passage. The Anthropic, Gemini,
-OpenAI, and OpenRouter providers only wire this scheme to their vendor SDK.
+OpenAI, OpenRouter, and Custom providers only wire this scheme to their vendor
+SDK (Custom being the OpenAI provider class itself, aimed at a different
+endpoint, so it inherits the same wiring unchanged).
 
 ## Source API (admin)
 
