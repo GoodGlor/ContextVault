@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contextvault.api.deps import get_current_user, require_admin
-from contextvault.core.config import get_settings
 from contextvault.db.session import get_session
 from contextvault.llm.models import ModelListError, list_models
 from contextvault.models import LLMProviderName, Repository, User
@@ -279,17 +278,12 @@ async def list_llm_models(
     provider has no key, returns 400. A provider failure (network) is a 400 too.
     """
     await _get_repo(session, repository_id)  # 404 if the repo is unknown
-    key = await provider_service.get_provider_key(session, payload.provider)
-    if not key:
+    if payload.provider not in await provider_service.verified_provider_names(session):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This provider has no verified API key; add one in Providers settings first.",
         )
-    base_url = (
-        get_settings().openrouter_base_url
-        if payload.provider == LLMProviderName.OPENROUTER
-        else None
-    )
+    key, base_url = await provider_service.get_call_credentials(session, payload.provider)
     try:
         models = await list_models(payload.provider.value, key, base_url=base_url)
     except ModelListError as exc:

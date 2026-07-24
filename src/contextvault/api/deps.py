@@ -130,9 +130,10 @@ async def build_repo_llm(session: AsyncSession, repo: Repository) -> LLMProvider
     verified key are all present.
     """
     assert repo.llm_provider is not None
-    api_key = await provider_service.get_provider_key(session, repo.llm_provider)
-    assert api_key is not None, "provider key missing; caller must gate on answerability"
-    return get_llm_provider(repo.llm_provider.value, api_key=api_key, model=repo.llm_model)
+    api_key, base_url = await provider_service.get_call_credentials(session, repo.llm_provider)
+    return get_llm_provider(
+        repo.llm_provider.value, api_key=api_key, model=repo.llm_model, base_url=base_url
+    )
 
 
 def get_llm_builder() -> RepoLLMBuilder:

@@ -179,6 +179,66 @@ async def test_image_ocr_releases_db_connection_during_transcription(
     )
 
 
+async def _make_answerable_custom_image_source(session: AsyncSession, base_url: str) -> Source:
+    """A repo on a verified, keyless custom provider, plus a pending image source."""
+    repo = Repository(
+        name="Vault",
+        llm_provider=LLMProviderName.CUSTOM,
+        llm_model="llava",
+    )
+    session.add(repo)
+    session.add(
+        ProviderSetting(
+            provider=LLMProviderName.CUSTOM,
+            api_key_encrypted=None,
+            base_url=base_url,
+            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    await session.flush()
+    source = Source(
+        repository_id=repo.id,
+        kind=SourceKind.IMAGE,
+        title="photo.heic",
+        original_filename="photo.heic",
+    )
+    session.add(source)
+    await session.flush()
+    return source
+
+
+async def test_image_ocr_on_keyless_custom_provider_transcribes_successfully(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A keyless custom (OpenAI-compatible) endpoint OCRs an image successfully.
+
+    ``_ocr_image`` must not assert a non-null key: a verified custom provider may
+    have no stored key at all, only a base URL. The base URL must still reach
+    ``transcribe_image`` so the vision call is aimed at the right server.
+    """
+    base_url = "http://localhost:11434/v1"
+    source = await _make_answerable_custom_image_source(db_session, base_url)
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_transcribe(
+        provider: str, api_key: str, model: str, *, image: bytes, base_url: str | None = None
+    ) -> str:
+        captured["base_url"] = base_url
+        return "transcribed page text"
+
+    monkeypatch.setattr("contextvault.services.ingestion.transcribe_image", fake_transcribe)
+    embedder = FakeEmbedder(get_settings().embedding_dim)
+
+    await ingest_source(
+        db_session, source, filename="photo.heic", data=b"rawimagebytes", embedder=embedder
+    )
+
+    assert source.status is SourceStatus.DONE
+    assert source.ingest_error is None
+    assert captured.get("base_url") == base_url
+
+
 async def test_embedding_failure_is_recorded(db_session: AsyncSession) -> None:
     _, source = await _make_source(db_session)
 
