@@ -5,7 +5,8 @@
   },
   "layout": {
     "logOut": "Log out",
-    "language": "Language"
+    "language": "Language",
+    "menu": "Menu"
   },
   "nav": {
     "query": "Ask",

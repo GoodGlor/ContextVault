@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { RequireAuth, RequireSession } from "./auth/RequireAuth";
+import { RepositoryProvider } from "./repository/RepositoryProvider";
 import { LoginPage } from "./pages/LoginPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { QueryPage } from "./pages/QueryPage";
@@ -31,7 +32,9 @@ export function App(): ReactNode {
       <Route
         element={
           <RequireAuth>
-            <Layout />
+            <RepositoryProvider>
+              <Layout />
+            </RepositoryProvider>
           </RequireAuth>
         }
       >

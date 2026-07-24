@@ -1,56 +1,27 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../auth/AuthContext";
-import { LanguageSwitcher } from "./LanguageSwitcher";
+import { Sidebar } from "./Sidebar";
 
-/** The app chrome for authenticated screens: a header bar + routed content. */
+/** Authenticated app chrome: a left sidebar + routed content. On narrow screens
+ *  the sidebar collapses behind a menu toggle. */
 export function Layout(): ReactNode {
-  const { session, logout } = useAuth();
-  const navigate = useNavigate();
   const { t } = useTranslation();
-
-  const onLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
-  };
-
+  const [open, setOpen] = useState(false);
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <Link to="/" className="app-brand">
-          ContextVault
-        </Link>
-        <nav className="app-nav">
-          <NavLink to="/" end>
-            {t("nav.query")}
-          </NavLink>
-          <NavLink to="/reports">{t("nav.reports")}</NavLink>
-        </nav>
-        {session?.role === "admin" && (
-          <nav className="app-nav">
-            <NavLink to="/admin/repositories">{t("nav.repositories")}</NavLink>
-            <NavLink to="/admin/providers">{t("nav.providers")}</NavLink>
-            <NavLink to="/admin/sources">{t("nav.sources")}</NavLink>
-            <NavLink to="/admin/database">{t("nav.database")}</NavLink>
-            <NavLink to="/admin/users">{t("nav.users")}</NavLink>
-            <NavLink to="/admin/insights">{t("nav.insights")}</NavLink>
-          </nav>
-        )}
-        <div className="app-user">
-          <LanguageSwitcher />
-          {session && (
-            <>
-              <span className="app-username">{session.username}</span>
-              <span className="app-role">{session.role}</span>
-              <button type="button" onClick={onLogout}>
-                {t("layout.logOut")}
-              </button>
-            </>
-          )}
-        </div>
-      </header>
-      <main className="app-main">
+    <div className="app-shell" data-nav-open={open ? "true" : "false"}>
+      <button
+        type="button"
+        className="nav-toggle"
+        aria-label={t("layout.menu")}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ☰
+      </button>
+      <Sidebar />
+      <main className="app-main" onClick={() => open && setOpen(false)}>
         <Outlet />
       </main>
     </div>

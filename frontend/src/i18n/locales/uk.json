@@ -5,7 +5,8 @@
   },
   "layout": {
     "logOut": "Вийти",
-    "language": "Мова"
+    "language": "Мова",
+    "menu": "Меню"
   },
   "nav": {
     "query": "Запити",
