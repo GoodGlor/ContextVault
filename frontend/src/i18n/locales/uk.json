@@ -234,6 +234,9 @@
     "copyLink": "Копіювати",
     "copiedLink": "Скопійовано"
   },
+  "repository": {
+    "errorLoad": "Не вдалося завантажити репозиторії."
+  },
   "repositories": {
     "failedToLoad": "Не вдалося завантажити репозиторії.",
     "couldNotCreate": "Не вдалося створити репозиторій.",

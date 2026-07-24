@@ -230,6 +230,9 @@
     "copyLink": "Copy",
     "copiedLink": "Copied"
   },
+  "repository": {
+    "errorLoad": "Could not load your repositories."
+  },
   "repositories": {
     "failedToLoad": "Failed to load repositories.",
     "couldNotCreate": "Could not create the repository.",
