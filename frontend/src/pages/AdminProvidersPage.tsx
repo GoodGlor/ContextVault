@@ -68,19 +68,26 @@ function ProviderRow({
   onChanged: (updated: ProviderStatus) => void;
 }): ReactNode {
   const { t } = useTranslation();
+  const isCustom = status.provider === "custom";
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(status.base_url ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canSave = isCustom ? baseUrl.trim() !== "" : apiKey.trim() !== "";
+
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
-    if (apiKey.trim() === "") return;
+    if (!canSave) return;
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
-      const updated = await setProviderKey(status.provider, apiKey.trim());
+      const updated = await setProviderKey(status.provider, {
+        apiKey: apiKey.trim() || undefined,
+        baseUrl: isCustom ? baseUrl.trim() : undefined,
+      });
       onChanged(updated);
       setApiKey("");
       setSaved(true);
@@ -97,7 +104,8 @@ function ProviderRow({
     setSaved(false);
     try {
       await deleteProviderKey(status.provider);
-      onChanged({ ...status, configured: false, verified: false, api_key_masked: null });
+      setBaseUrl("");
+      onChanged({ ...status, configured: false, verified: false, api_key_masked: null, base_url: null });
     } catch (err) {
       setError(errorMessage(err, t("providers.couldNotRemove")));
     } finally {
@@ -106,6 +114,7 @@ function ProviderRow({
   };
 
   const keyId = `provider-key-${status.provider}`;
+  const urlId = `provider-url-${status.provider}`;
 
   return (
     <li className="provider-item">
@@ -122,7 +131,23 @@ function ProviderRow({
           )}
         </div>
 
-        <label htmlFor={keyId}>{t("providers.apiKey")}</label>
+        {isCustom && (
+          <>
+            <label htmlFor={urlId}>{t("providers.baseUrl")}</label>
+            <input
+              id={urlId}
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={t("providers.baseUrlPlaceholder")}
+            />
+            <p className="notice">{t("providers.customEmbeddingsNote")}</p>
+          </>
+        )}
+
+        <label htmlFor={keyId}>
+          {isCustom ? t("providers.apiKeyOptional") : t("providers.apiKey")}
+        </label>
         <input
           id={keyId}
           type="password"
@@ -130,7 +155,7 @@ function ProviderRow({
           onChange={(e) => setApiKey(e.target.value)}
           placeholder={status.configured ? t("providers.replacePlaceholder") : ""}
         />
-        <button type="submit" disabled={saving || apiKey.trim() === ""}>
+        <button type="submit" disabled={saving || !canSave}>
           {saving ? t("providers.saving") : t("providers.saveKey")}
         </button>
         {status.configured && (
