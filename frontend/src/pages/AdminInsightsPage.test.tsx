@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminInsightsPage } from "./AdminInsightsPage";
-import { renderWithRepo } from "../test/renderWithRepo";
+import { renderWithRepo, repoValue } from "../test/renderWithRepo";
 import type { KnowledgeGap, GapRejection } from "../api/knowledgeGaps";
 import type { AnalyticsOverview } from "../api/analytics";
 
@@ -170,5 +170,14 @@ describe("AdminInsightsPage", () => {
       question: "What is the VPN?",
       reason: "Out of scope",
     });
+  });
+
+  it("surfaces a repository-list load failure from the shared context", async () => {
+    mock();
+    renderWithRepo(
+      <AdminInsightsPage />,
+      repoValue({ error: "Could not load your repositories." }),
+    );
+    expect(await screen.findByText("Could not load your repositories.")).toBeInTheDocument();
   });
 });

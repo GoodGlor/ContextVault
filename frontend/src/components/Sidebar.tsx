@@ -66,11 +66,7 @@ export function Sidebar(): ReactNode {
       {repos.length > 0 && (
         <label className="repo-switch">
           <span className="repo-switch-caption">{t("nav.repository")}</span>
-          <select
-            aria-label={t("nav.repository")}
-            value={currentRepoId}
-            onChange={(e) => setCurrentRepoId(e.target.value)}
-          >
+          <select value={currentRepoId} onChange={(e) => setCurrentRepoId(e.target.value)}>
             {repos.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}

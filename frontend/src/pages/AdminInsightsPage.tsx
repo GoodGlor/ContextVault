@@ -20,10 +20,12 @@ function errorMessage(err: unknown, fallback: string): string {
 /** The curation cockpit: knowledge gaps → Admin Notes → usage analytics (card #40). */
 export function AdminInsightsPage(): ReactNode {
   const { t } = useTranslation();
+  const { error } = useCurrentRepository();
 
   return (
     <div className="admin-insights">
       <h1>{t("insights.title")}</h1>
+      {error !== null && <p className="error">{error}</p>}
       <KnowledgeGapsPanel />
       <AnalyticsPanel />
     </div>

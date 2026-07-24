@@ -747,11 +747,15 @@ in development (no CORS).
   everyone), *Manage this repo* (Data, Providers, Insights, admin-only), and *Admin*
   (Repositories, Users, admin-only).
 - **Current repository** (`src/repository/`) — `RepositoryProvider` owns the single
-  "current repository" for the whole app (admins see every repository, members only
-  their granted ones) and persists the selection to `localStorage`. The sidebar's
-  **repository switcher**, at the top above the nav groups, is the only place that
-  changes it; Ask, Reports, Data, and Insights all read it via the shared
-  `useCurrentRepository()` hook rather than each holding their own repo picker.
+  "current repository" for the whole app and persists the selection to `localStorage`.
+  The sidebar's **repository switcher**, at the top above the nav groups, is the only
+  place that changes it; Ask, Reports, Data, and Insights all read it via the shared
+  `useCurrentRepository()` hook rather than each holding their own repo picker. The
+  switcher's *list*, however, is route-scoped: workspace surfaces (Ask, Reports) show
+  only the repositories the user is **granted**, matching the backend's grant model
+  (which subjects even admins to grants for querying), while admin management surfaces
+  (`/admin/*`, e.g. Data and Insights) show **all** repositories, since managing one
+  doesn't require a query grant. Members only ever see their granted list either way.
 
 **Auth screens** (card #35, `src/pages/`):
 

@@ -63,7 +63,6 @@
     "asking": "Thinking…",
     "ask": "Ask",
     "send": "Send",
-    "failedRepos": "Failed to load repositories.",
     "clearConversation": "Clear conversation"
   },
   "queryTurn": {
@@ -81,10 +80,8 @@
   "insights": {
     "title": "Insights",
     "loading": "Loading…",
-    "errorLoadRepositories": "Failed to load repositories.",
     "knowledgeGapsAriaLabel": "Knowledge gaps",
     "knowledgeGaps": "Knowledge gaps",
-    "repository": "Repository",
     "noteSaved": "Admin Note saved for “{{question}}”. It will close the gap once ingested.",
     "loadingGaps": "Loading gaps…",
     "noGaps": "No knowledge gaps — every asked question was answerable. 🎉",
@@ -125,8 +122,6 @@
     "errorRejectGap": "Could not reject the gap."
   },
   "adminSources": {
-    "title": "Sources",
-    "repositoryLabel": "Repository",
     "documentLabel": "Documents",
     "ocrHint": "Select one or more files. Images are read with OCR — only text visible in the image is captured.",
     "uploadButton": "Upload",
@@ -134,7 +129,6 @@
     "webLinkLabel": "Web link",
     "urlPlaceholder": "https://example.com/article",
     "addLinkButton": "Add link",
-    "loadingRepos": "Loading repositories…",
     "noRepos": "No repositories yet. Create one under Repositories first.",
     "loadingSources": "Loading sources…",
     "noSources": "No sources yet. Upload a document to get started.",
@@ -143,7 +137,6 @@
     "statusProcessing": "Processing",
     "statusDone": "Completed",
     "statusFailed": "Failed",
-    "errorLoadRepos": "Failed to load repositories.",
     "errorLoadSources": "Failed to load sources.",
     "errorUpload": "Upload failed.",
     "errorUploadSome": "{{failed}} of {{total}} files failed to upload.",
@@ -151,11 +144,7 @@
     "errorDelete": "Could not delete the source."
   },
   "adminDatabase": {
-    "title": "Database",
-    "repositoryLabel": "Repository",
-    "loadingRepos": "Loading repositories…",
     "noRepos": "No repositories yet. Create one under Repositories first.",
-    "errorLoadRepos": "Failed to load repositories.",
     "loadingConnection": "Loading connection…",
     "errorLoadConnection": "Failed to load the database connection.",
     "setupIntro": "Connect a read-only reporting database for this repository.",
