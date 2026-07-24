@@ -12,6 +12,7 @@ from contextvault.api.invitations import router as invitations_router
 from contextvault.api.knowledge_gaps import router as knowledge_gaps_router
 from contextvault.api.providers import router as providers_router
 from contextvault.api.query import router as query_router
+from contextvault.api.reports import router as reports_router
 from contextvault.api.repositories import router as repositories_router
 from contextvault.api.sources import router as sources_router
 from contextvault.api.users import router as users_router
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(conversation_router)
     app.include_router(knowledge_gaps_router)
     app.include_router(analytics_router)
+    app.include_router(reports_router)
     return app
 
 
