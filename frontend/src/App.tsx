@@ -10,8 +10,7 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
 import { AdminProvidersPage } from "./pages/AdminProvidersPage";
-import { AdminSourcesPage } from "./pages/AdminSourcesPage";
-import { AdminDatabasePage } from "./pages/AdminDatabasePage";
+import { AdminDataPage } from "./pages/AdminDataPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminInsightsPage } from "./pages/AdminInsightsPage";
 
@@ -57,21 +56,15 @@ export function App(): ReactNode {
           }
         />
         <Route
-          path="/admin/sources"
+          path="/admin/data"
           element={
             <RequireAuth requireAdmin>
-              <AdminSourcesPage />
+              <AdminDataPage />
             </RequireAuth>
           }
         />
-        <Route
-          path="/admin/database"
-          element={
-            <RequireAuth requireAdmin>
-              <AdminDatabasePage />
-            </RequireAuth>
-          }
-        />
+        <Route path="/admin/sources" element={<Navigate to="/admin/data?tab=documents" replace />} />
+        <Route path="/admin/database" element={<Navigate to="/admin/data?tab=database" replace />} />
         <Route
           path="/admin/users"
           element={

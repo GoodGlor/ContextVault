@@ -194,6 +194,11 @@
     "confirmDelete": "Delete this database connection? This cannot be undone.",
     "errorDelete": "Could not delete the connection."
   },
+  "data": {
+    "title": "Data",
+    "tabDocuments": "Documents & web",
+    "tabDatabase": "Database"
+  },
   "users": {
     "title": "Users & access",
     "loading": "Loading…",

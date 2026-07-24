@@ -945,3 +945,13 @@ code {
     padding: 1.5rem 1rem 3rem;
   }
 }
+
+/* ---- tabbar (Data page) --------------------------------------------------- */
+.tabbar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 0 0 20px; }
+.tabbar .tab {
+  border: 0; background: transparent; color: var(--muted); font-weight: 650;
+  padding: 9px 14px; border-bottom: 2px solid transparent; border-radius: 0; cursor: pointer;
+}
+.tabbar .tab:hover { color: var(--text); }
+.tabbar .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tabbar .tab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
