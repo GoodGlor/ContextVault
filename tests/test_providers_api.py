@@ -67,7 +67,13 @@ async def test_list_providers_starts_all_unconfigured(
     resp = await client.get("/admin/providers", headers=_auth(token))
     assert resp.status_code == 200
     rows = resp.json()
-    assert {r["provider"] for r in rows} == {"gemini", "openai", "openrouter", "anthropic"}
+    assert {r["provider"] for r in rows} == {
+        "gemini",
+        "openai",
+        "openrouter",
+        "anthropic",
+        "custom",
+    }
     assert all(r["configured"] is False and r["verified"] is False for r in rows)
     assert all(r["api_key_masked"] is None for r in rows)
 

@@ -22,6 +22,7 @@ class LLMProviderName(enum.StrEnum):
     OPENAI = "openai"
     OPENROUTER = "openrouter"
     ANTHROPIC = "anthropic"
+    CUSTOM = "custom"
 
 
 class SourceKind(enum.StrEnum):
