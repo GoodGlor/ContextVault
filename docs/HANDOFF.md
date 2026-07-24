@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-24 19:53 EEST (custom OpenAI-compatible LLM provider — SDD complete, PR pending)
+- **Last updated:** 2026-07-24 20:00 EEST (custom OpenAI-compatible LLM provider — merged #118)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`. *(Recent feature work has shipped outside the board via superpowers SDD.)*
 
@@ -9,11 +9,10 @@
 ## TL;DR
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
-backend, React/Vite SPA), feature-complete. **In flight: the `custom` OpenAI-compatible LLM
-provider — 15 commits on `feat/custom-openai-compatible-provider`, full gate green, whole-branch
-review says merge-as-is. About to open a PR (not yet pushed at time of writing).**
+backend, React/Vite SPA), feature-complete. **Nothing is in flight — `main` is clean, pushed,
+and there are no open PRs.**
 
-**This session — custom (OpenAI-compatible) LLM provider — Phase 1 (branch `feat/custom-openai-compatible-provider`).**
+**Merged this session — custom (OpenAI-compatible) LLM provider, Phase 1 — #118 (squash `52196b1`).**
 A new **`custom`** provider ("Custom, OpenAI-compatible") lets a deployment point chat / report /
 OCR at a self-hosted model (Ollama, vLLM, LM Studio, TGI, LocalAI) via **one global endpoint** —
 a nullable `base_url` column on `provider_settings` + an **optional** API key (keyless local
@@ -22,8 +21,8 @@ persisted). It reuses the OpenAI Chat Completions wire path (like OpenRouter). O
 `provider_service.get_call_credentials(session, provider) -> (api_key_or_placeholder, base_url)`,
 resolves credentials at **every** call site (chat via `deps.build_repo_llm`, reports, OCR/ingestion,
 model-list endpoint). Per-repo model selection with **free-text entry** for arbitrary local ids.
-EN+UK i18n. Built via superpowers SDD (11 tasks + gate-fix + whole-branch review on opus). Full
-local gate green — backend **498✓** (ruff/format/mypy/alembic/pytest), frontend **109✓** (lint/
+EN+UK i18n. Built via superpowers SDD (11 tasks + gate-fix + whole-branch review on opus = merge-as-is).
+Full local gate green — backend **498✓** (ruff/format/mypy/alembic/pytest), frontend **109✓** (lint/
 format/typecheck/test/build). Details under *Done recently*.
 
 **⚠️ LOAD-BEARING CAVEAT — Phase 1 is NOT air-gapped.** Ingestion still calls **Gemini** to embed
@@ -52,22 +51,22 @@ pre-Gemini DB, and set a verified Gemini provider key or every ingest/query 409s
 
 | | Value |
 |---|---|
-| Current branch | `feat/custom-openai-compatible-provider` (HEAD `0efa41c`, **15 commits ahead of `main`, not yet pushed**) |
-| `main` HEAD | `c4ec625` (#117, workspace-sidebar redesign) — unchanged this session |
-| In flight | **custom-provider branch** — full gate green, whole-branch review = merge-as-is; PR to be opened |
+| Current branch | `main` (clean, in sync with `origin/main`) |
+| `main` HEAD | `52196b1` (#118, custom OpenAI-compatible provider) |
+| In flight | **nothing** — no open PRs; `feat/custom-openai-compatible-provider` merged + local branch deleted (remote branch still on GitHub — safe to delete) |
 | Parked | `wip/passage-toggle` (off an older `main`) — a prior session's passage view/hide toggle, **never reviewed/merged**. Rebase, review, PR-or-drop. |
-| CI | not yet run remotely (branch unpushed); local CI-parity gate green (backend 498✓, frontend 109✓) |
+| CI | green on #118 (merged); local CI-parity gate green pre-merge (backend 498✓, frontend 109✓) |
 | Local infra | `contextvault-db` (pgvector pg16) up + migrated (head `c1d2e3f40506`) |
-| Migration head | **`c1d2e3f40506`** (this session — `custom` enum value + `base_url` column + nullable key). Prev head `b8c2d5e7f901`. |
+| Migration head | **`c1d2e3f40506`** (#118 — `custom` enum value + `base_url` column + nullable key). Prev head `b8c2d5e7f901`. |
 
-Recent merged PRs: **#117** workspace-sidebar redesign (`c4ec625`) · **#116** database-backed
-reports (`1eb528e`) · **#115** admin-note grounding + auto-grant creator (`c6f1e3a`).
+Recent merged PRs: **#118** custom OpenAI-compatible provider (`52196b1`) · **#117** workspace-sidebar
+redesign (`c4ec625`) · **#116** database-backed reports (`1eb528e`).
 
 ---
 
 ## Done recently (this session)
 
-### Custom (OpenAI-compatible) LLM provider — Phase 1 — branch `feat/custom-openai-compatible-provider` (superpowers SDD, 11 tasks + gate-fix + whole-branch review on opus)
+### Custom (OpenAI-compatible) LLM provider — Phase 1 — merged as #118 (squash `52196b1`; superpowers SDD, 11 tasks + gate-fix + whole-branch review on opus)
 
 Spec → plan under `docs/superpowers/` (`2026-07-24-custom-openai-compatible-provider.md` ×2; committed
 `7f8aa3a` spec / `da7c0d0` plan / `fb23cf1` plan-fix). Additive backend + frontend, one Alembic
@@ -110,12 +109,13 @@ migration. What shipped (commit-by-commit, `3266b19`..`0efa41c`):
 
 ## Next up
 
-1. **Review + merge the custom-provider PR** (branch `feat/custom-openai-compatible-provider`). Full
-   local gate green, whole-branch review = merge-as-is. Per owner merge policy: open PR, watch remote
-   CI green, **owner merges**. After merge, `git reset --hard origin/main` (squash-merge diverges local).
-   Optional pre-/post-merge polish (all non-blocking, in `.superpowers/sdd/progress.md`): tighten the
-   reports "no verified key" message when the real gap is a missing model; consider suppressing `noModels`
-   for custom; file SSRF-hardening + e2e-selector follow-up cards.
+1. **Custom-provider follow-ups (#118, each a candidate card, all non-blocking):** (a) **SSRF hardening**
+   for the admin-supplied `base_url` (fetched server-side at verify + every call) — deferred, shares the
+   `web_source.py` posture below; (b) provider **e2e** selector updates (CI skips e2e); (c) cosmetic
+   polish in `.superpowers/sdd/progress.md` — tighten the reports "no verified key" message when the real
+   gap is a missing model; consider suppressing `noModels` for custom; "Remove key" on the custom row
+   removes the whole endpoint (label imprecise). **Phase 2** (local embeddings + per-dimension vector
+   tables → true air-gap) / **Phase 3** (Ollama-native UX) per spec §11.
 2. **Rotate the three exposed `.env` secrets** (see the ⚠️ owner-actions block in the TL;DR above) —
    owner action, because database-backed reports store reporting-DB passwords under `ENCRYPTION_KEY`.
    Settle the key **before** creating real connections; re-enter provider keys (Providers tab) and any
@@ -242,11 +242,11 @@ See `README.md` for quick start and `docs/architecture.md` for the subsystem/end
 
 ## History
 
-- **(in review, PR pending)** custom (OpenAI-compatible) LLM provider — Phase 1: global `base_url` +
-  optional key on `provider_settings`, one `get_call_credentials` seam, `custom` branch at all five
-  dispatch sites, per-repo free-text model, EN+UK i18n, migration `c1d2e3f40506`. superpowers SDD (11
-  tasks + gate-fix + opus whole-branch review = merge-as-is). NOT air-gapped (Gemini still embeds →
-  Phase 2). Detailed under *Done recently*.
+- **#118** custom (OpenAI-compatible) LLM provider — Phase 1 (`52196b1`): global `base_url` + optional
+  key on `provider_settings`, one `get_call_credentials` seam, `custom` branch at all five dispatch
+  sites, per-repo free-text model, EN+UK i18n, migration `c1d2e3f40506`. superpowers SDD (11 tasks +
+  gate-fix + opus whole-branch review = merge-as-is). NOT air-gapped (Gemini still embeds → Phase 2).
+  Detailed under *Done recently*.
 - **#117** workspace-sidebar redesign (frontend-only): header → grouped sidebar, one route-scoped
   `RepositoryContext` switcher, Sources+Database → tabbed Data page with redirects. superpowers SDD,
   8 tasks + opus whole-branch review + fix pass. Detailed under *Done recently*.
