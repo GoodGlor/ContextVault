@@ -35,8 +35,6 @@ import contextvault.models  # noqa: E402, F401  (registers tables on Base.metada
 from contextvault.core.config import get_settings  # noqa: E402
 from contextvault.db.base import Base  # noqa: E402
 
-_ALL_TABLES = ", ".join(t.name for t in Base.metadata.sorted_tables)
-
 
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -51,8 +49,16 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     conn = await engine.connect()
     trans = await conn.begin()
     # Start each test from a clean slate regardless of any committed rows; the
-    # outer rollback below restores them, so the truncate is test-local only.
-    await conn.execute(sa.text(f"TRUNCATE {_ALL_TABLES} RESTART IDENTITY CASCADE"))
+    # outer rollback below restores them, so the clearing is test-local only.
+    # DELETE (not TRUNCATE) deliberately: TRUNCATE takes an ACCESS EXCLUSIVE lock
+    # that would sit for the whole test (only released by the final rollback),
+    # blocking any other connection to the same tables — e.g. report generation's
+    # own per-call reporting-DB connection (services/report_execution.py) querying
+    # the app DB in tests. DELETE takes a ROW EXCLUSIVE lock, which does not block
+    # concurrent readers. No table here has a sequence (all PKs are app-generated
+    # UUIDs), so there is no identity counter to restart.
+    for table in reversed(Base.metadata.sorted_tables):
+        await conn.execute(table.delete())
     session = AsyncSession(bind=conn, expire_on_commit=False)
     try:
         yield session
