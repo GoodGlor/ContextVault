@@ -158,8 +158,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Postgres 12+ permits ADD VALUE inside a transaction as long as the new value
-    # is not *used* in the same transaction (it is not — no data references it here).
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block, so commit
+    # first and use IF NOT EXISTS so the migration is safely re-runnable — the same
+    # pattern as migrations/versions/a1b2c3d4e5f6_image_web_sources.py.
+    op.execute("COMMIT")
     op.execute("ALTER TYPE llm_provider ADD VALUE IF NOT EXISTS 'custom'")
     op.add_column("provider_settings", sa.Column("base_url", sa.Text(), nullable=True))
     op.alter_column(
