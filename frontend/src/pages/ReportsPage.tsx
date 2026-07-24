@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
-import { listRepositories, type Repository } from "../api/repositories";
+import { useCurrentRepository } from "../repository/RepositoryContext";
 import {
   createReport,
   createSchedule,
@@ -28,9 +28,7 @@ function errorMessage(err: unknown, fallback: string): string {
  *  PDF, and optionally freeze a done report into a nightly schedule. */
 export function ReportsPage(): ReactNode {
   const { t } = useTranslation();
-  const [repos, setRepos] = useState<Repository[] | null>(null);
-  const [reposError, setReposError] = useState<string | null>(null);
-  const [selected, setSelected] = useState("");
+  const { repos, currentRepoId, loading, error } = useCurrentRepository();
 
   const [reports, setReports] = useState<Report[] | null>(null);
   const [reportsError, setReportsError] = useState<string | null>(null);
@@ -42,31 +40,14 @@ export function ReportsPage(): ReactNode {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
   const [schedulesError, setSchedulesError] = useState<string | null>(null);
 
-  // Load the granted repository list and default to the first one.
+  // (Re)load this repository's reports and schedules whenever the current
+  // repository changes.
   useEffect(() => {
-    let cancelled = false;
-    listRepositories()
-      .then((rs) => {
-        if (cancelled) return;
-        setRepos(rs);
-        if (rs.length > 0) setSelected(rs[0].id);
-      })
-      .catch(
-        (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, t("reports.errorLoadRepos"))),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  // (Re)load this repository's reports and schedules whenever the selection changes.
-  useEffect(() => {
-    if (selected === "") return;
+    if (currentRepoId === "") return;
     let cancelled = false;
     setReports(null);
     setReportsError(null);
-    listReports(selected)
+    listReports(currentRepoId)
       .then((rs) => !cancelled && setReports(rs))
       .catch(
         (err: unknown) =>
@@ -74,7 +55,7 @@ export function ReportsPage(): ReactNode {
       );
     setSchedules(null);
     setSchedulesError(null);
-    listSchedules(selected)
+    listSchedules(currentRepoId)
       .then((ss) => !cancelled && setSchedules(ss))
       .catch(
         (err: unknown) =>
@@ -83,32 +64,32 @@ export function ReportsPage(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [selected, t]);
+  }, [currentRepoId, t]);
 
   // Poll while anything is still generating; re-schedules each time the list
   // changes, and stops once every report has reached a terminal state — the same
-  // idiom as AdminSourcesPage's ingestion poll.
+  // idiom as SourcesPanel's ingestion poll.
   useEffect(() => {
-    if (selected === "" || reports === null) return;
+    if (currentRepoId === "" || reports === null) return;
     if (!reports.some((r) => isGenerating(r.status))) return;
     const timer = setTimeout(() => {
-      listReports(selected)
+      listReports(currentRepoId)
         .then(setReports)
         .catch(() => {
           /* transient; the next tick retries */
         });
     }, REPORT_POLL_MS);
     return () => clearTimeout(timer);
-  }, [reports, selected]);
+  }, [reports, currentRepoId]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const p = prompt.trim();
-    if (selected === "" || p === "" || submitting) return;
+    if (currentRepoId === "" || p === "" || submitting) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const created = await createReport(selected, p);
+      const created = await createReport(currentRepoId, p);
       setReports((prev) => [created, ...(prev ?? [])]);
       setPrompt("");
     } catch (err) {
@@ -120,7 +101,7 @@ export function ReportsPage(): ReactNode {
 
   const onDownload = async (report: Report) => {
     try {
-      const blob = await downloadReport(selected, report.id);
+      const blob = await downloadReport(currentRepoId, report.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -136,7 +117,7 @@ export function ReportsPage(): ReactNode {
     const time = window.prompt(t("reports.scheduleTimePrompt"), "02:00");
     if (time === null || time.trim() === "") return;
     try {
-      const created = await createSchedule(selected, report.id, time.trim());
+      const created = await createSchedule(currentRepoId, report.id, time.trim());
       setSchedules((prev) => [created, ...(prev ?? [])]);
     } catch (err) {
       setSchedulesError(errorMessage(err, t("reports.errorSchedule")));
@@ -161,10 +142,10 @@ export function ReportsPage(): ReactNode {
     }
   };
 
-  if (reposError !== null) {
-    return <p className="error">{reposError}</p>;
+  if (error !== null) {
+    return <p className="error">{error}</p>;
   }
-  if (repos === null) {
+  if (loading) {
     return <p>{t("reports.loadingRepos")}</p>;
   }
   if (repos.length === 0) {
@@ -181,15 +162,6 @@ export function ReportsPage(): ReactNode {
   return (
     <section className="reports-page">
       <h1>{t("reports.title")}</h1>
-
-      <label htmlFor="report-repo">{t("reports.repository")}</label>
-      <select id="report-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
-        {repos.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name}
-          </option>
-        ))}
-      </select>
 
       <form className="report-request" onSubmit={onSubmit}>
         <label htmlFor="report-prompt">{t("reports.promptLabel")}</label>

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { QueryPage } from "./QueryPage";
 import type { QueryResult } from "../api/query";
-import type { Repository } from "../api/repositories";
 import type { SavedConversation } from "../api/conversations";
+import { renderWithRepo, repoValue } from "../test/renderWithRepo";
+import { RepositoryContext } from "../repository/RepositoryContext";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -12,11 +14,6 @@ function json(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-
-const REPOS: Repository[] = [
-  { id: "r-1", name: "Handbook", description: null },
-  { id: "r-2", name: "Runbook", description: "ops" },
-];
 
 const CITED: QueryResult = {
   answer: "Retention is 30 days [1] and reviewed quarterly [2].",
@@ -53,34 +50,23 @@ describe("QueryPage", () => {
     vi.unstubAllGlobals();
   });
 
-  function mock(
-    repos: Repository[],
-    result?: QueryResult,
-    conversation: SavedConversation = { turns: [] },
-  ) {
+  // The repo comes from the seeded RepositoryContext now, not a page-level fetch;
+  // this mock only ever needs to answer /conversation and /query.
+  function mock(result?: QueryResult, conversation: SavedConversation = { turns: [] }) {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes("/query")) return Promise.resolve(json(result ?? CITED));
       if (url.includes("/conversation")) {
         if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
         return Promise.resolve(json(conversation));
       }
-      if (url.endsWith("/repositories")) return Promise.resolve(json(repos));
       throw new Error(`unexpected fetch ${url}`);
     });
   }
 
-  it("shows the granted repositories in the picker", async () => {
-    mock(REPOS);
-    render(<QueryPage />);
-    const picker = await screen.findByLabelText("Repository");
-    expect(within(picker).getByRole("option", { name: "Handbook" })).toBeInTheDocument();
-    expect(within(picker).getByRole("option", { name: "Runbook" })).toBeInTheDocument();
-  });
-
   it("asks a question and renders the cited answer, verified badge, and sources", async () => {
-    mock(REPOS);
-    render(<QueryPage />);
-    await screen.findByLabelText("Repository");
+    mock();
+    renderWithRepo(<QueryPage />);
+    await screen.findByLabelText("Question");
 
     await userEvent.type(screen.getByLabelText("Question"), "How long is retention?");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -91,15 +77,15 @@ describe("QueryPage", () => {
     // The admin-note source is flagged Verified and attributed.
     expect(screen.getByText("Verified")).toBeInTheDocument();
     expect(screen.getByText(/by ada/)).toBeInTheDocument();
-    // Posted to the selected (first) repository.
+    // Posted to the current (context) repository.
     const posted = fetchMock.mock.calls.find((c) => String(c[0]).includes("/query"));
     expect(String(posted?.[0])).toContain("/repositories/r-1/query");
   });
 
   it("sends only the question — the backend resolves conversation history server-side", async () => {
-    mock(REPOS);
-    render(<QueryPage />);
-    await screen.findByLabelText("Repository");
+    mock();
+    renderWithRepo(<QueryPage />);
+    await screen.findByLabelText("Question");
 
     // First turn.
     await userEvent.type(screen.getByLabelText("Question"), "What is the PTO policy?");
@@ -120,18 +106,25 @@ describe("QueryPage", () => {
     });
   });
 
-  it("starts a fresh conversation when the repository changes", async () => {
-    mock(REPOS);
-    render(<QueryPage />);
-    const picker = await screen.findByLabelText("Repository");
+  it("starts a fresh conversation when the current repository changes", async () => {
+    mock();
+    const { rerender } = renderWithRepo(<QueryPage />);
+    await screen.findByLabelText("Question");
 
     await userEvent.type(screen.getByLabelText("Question"), "How long is retention?");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText(/Retention is 30 days/);
 
-    // Switching repositories loads that repository's own saved conversation
-    // (empty here), replacing the prior repo's transcript...
-    await userEvent.selectOptions(picker, "r-2");
+    // The repo switcher now lives in the sidebar; simulate it changing the shared
+    // context. That reloads this repository's own saved conversation (empty here),
+    // replacing the prior repo's transcript...
+    rerender(
+      <MemoryRouter>
+        <RepositoryContext.Provider value={repoValue({ currentRepoId: "r-2" })}>
+          <QueryPage />
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
     await waitFor(() => {
       expect(screen.queryByText(/Retention is 30 days/)).not.toBeInTheDocument();
     });
@@ -147,7 +140,7 @@ describe("QueryPage", () => {
   });
 
   it("restores the saved conversation on load", async () => {
-    mock(REPOS, undefined, {
+    mock(undefined, {
       turns: [
         {
           question: "Saved question?",
@@ -158,13 +151,13 @@ describe("QueryPage", () => {
         },
       ],
     });
-    render(<QueryPage />);
+    renderWithRepo(<QueryPage />);
     expect(await screen.findByText("Saved question?")).toBeInTheDocument();
     expect(screen.getByText(/saved answer/i)).toBeInTheDocument();
   });
 
   it("clears the conversation when Clear is clicked", async () => {
-    mock(REPOS, undefined, {
+    mock(undefined, {
       turns: [
         {
           question: "Saved question?",
@@ -175,7 +168,7 @@ describe("QueryPage", () => {
         },
       ],
     });
-    render(<QueryPage />);
+    renderWithRepo(<QueryPage />);
     await screen.findByText("Saved question?");
     await userEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
     expect(screen.queryByText("Saved question?")).not.toBeInTheDocument();
@@ -184,9 +177,9 @@ describe("QueryPage", () => {
   });
 
   it("highlights the matching source when a citation is clicked", async () => {
-    mock(REPOS);
-    render(<QueryPage />);
-    await screen.findByLabelText("Repository");
+    mock();
+    renderWithRepo(<QueryPage />);
+    await screen.findByLabelText("Question");
     await userEvent.type(screen.getByLabelText("Question"), "retention?");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText(/Retention is 30 days/);
@@ -198,14 +191,14 @@ describe("QueryPage", () => {
   });
 
   it("shows an explicit not-in-vault state", async () => {
-    mock(REPOS, {
+    mock({
       answer: "I could not find this in the vault.",
       not_in_vault: true,
       citations: [],
       sources: [],
     });
-    render(<QueryPage />);
-    await screen.findByLabelText("Repository");
+    renderWithRepo(<QueryPage />);
+    await screen.findByLabelText("Question");
     await userEvent.type(screen.getByLabelText("Question"), "unknown thing?");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -213,8 +206,7 @@ describe("QueryPage", () => {
   });
 
   it("tells a user with no grants they have no repositories", async () => {
-    mock([]);
-    render(<QueryPage />);
+    renderWithRepo(<QueryPage />, repoValue({ repos: [], currentRepoId: "" }));
     expect(await screen.findByText(/don’t have access to any repositories/i)).toBeInTheDocument();
     expect(screen.queryByLabelText("Question")).not.toBeInTheDocument();
   });

@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-24 10:52 EEST (database-backed reports merged #116)
+- **Last updated:** 2026-07-24 (workspace-sidebar + unified Data page, task 8/8 — pending whole-branch review)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`. *(Recent feature work has shipped outside the board via superpowers SDD.)*
 
@@ -10,6 +10,14 @@
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
 backend, React/Vite SPA), feature-complete.
+
+**In flight — workspace-sidebar redesign, branch `redesign/workspace-sidebar` (not yet
+merged).** Frontend-only: top header nav → left sidebar with grouped nav + a repository
+switcher that's the single source of the current repo (`RepositoryContext`); Sources +
+Database admin pages merged into one tabbed **Data** page (`/admin/sources` and
+`/admin/database` now redirect there). Built via superpowers SDD (8 tasks); this is the
+final task (full gate + docs) — next is the whole-branch review, then a PR. Details
+under *Done recently*.
 
 **Merged this session — Database-backed reports — #116 (squash `1eb528e`).** An admin connects a
 read-only Postgres/MySQL database to a repository (encrypted credentials, allow-listed
@@ -40,9 +48,9 @@ pre-Gemini DB, and set a verified Gemini provider key or every ingest/query 409s
 
 | | Value |
 |---|---|
-| Current branch | `main` (clean, pushed — no ahead/behind) |
+| Current branch | `redesign/workspace-sidebar` (local, not yet pushed) — frontend workspace-sidebar + unified Data page, built via superpowers SDD (8 tasks); this is task 8/8 (final gate + docs), next step is the whole-branch review before opening a PR |
 | `main` HEAD | `1eb528e` (#116, database-backed reports) |
-| In flight | **nothing** — no open PRs |
+| In flight | `redesign/workspace-sidebar`, not yet pushed/PR'd — pending whole-branch review |
 | Parked | `wip/passage-toggle` (off an older `main`) — a prior session's passage view/hide toggle, **never reviewed/merged**; carries stale HANDOFF edits. Rebase, review, PR-or-drop. |
 | CI | green on #116 |
 | Local infra | `contextvault-db` (pgvector pg16) up + migrated (head `b8c2d5e7f901`) |
@@ -54,6 +62,28 @@ auto-grant creator (`c6f1e3a`) · **#114** persisted conversations + gap rejecti
 ---
 
 ## Done recently (this session)
+
+### Workspace sidebar + unified Data page — branch `redesign/workspace-sidebar` (superpowers SDD, 8 tasks; not yet merged — whole-branch review is next)
+
+Frontend-only redesign: the old top header nav is gone, replaced by a left **sidebar**
+(`src/components/Sidebar.tsx`) grouped into *Workspace* (Ask, Reports — everyone),
+*Manage this repo* (Data, Providers, Insights — admin-only), and *Admin* (Repositories,
+Users — admin-only). A **repository switcher** at the top of the sidebar is now the
+single source of the current repo: a new `RepositoryContext`/`RepositoryProvider`
+(`src/repository/`) owns `currentRepoId` (persisted to `localStorage`) and every
+repo-scoped page (Ask, Reports, Data, Insights) reads it via `useCurrentRepository()`
+instead of holding its own repo picker. The former **Sources** and **Database** admin
+pages are merged into one **Data** page (`/admin/data`, tabs `?tab=documents|database`,
+extracted as `SourcesPanel`/`DatabasePanel`); `/admin/sources` and `/admin/database` are
+now `<Navigate>` redirects to `/admin/data`, so old bookmarks/links keep working. The
+merged nav label is a one-string i18n change (`nav.data` / `data.title` in both
+`en.json`/`uk.json`); the now-dead `nav.sources`, `nav.database`, `query.repository`,
+`reports.repository`, `reports.errorLoadRepos` keys were deleted from both locales
+(verified zero references first). Full frontend gate green (lint/format/typecheck/test/
+build) with pristine test output (no `act(...)` warnings). **Follow-up, not a CI
+blocker:** CI does not run the Playwright e2e specs, but any spec that navigated via the
+old top-header links (rather than the sidebar) will need selector updates before it can
+pass again — check `frontend/e2e/` next time e2e is run.
 
 ### Database-backed reports — merged as #116 (squash `1eb528e`; superpowers SDD, 14 tasks + final review)
 

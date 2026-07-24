@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminInsightsPage } from "./AdminInsightsPage";
-import type { AdminRepository } from "../api/repositories";
+import { renderWithRepo, repoValue } from "../test/renderWithRepo";
 import type { KnowledgeGap, GapRejection } from "../api/knowledgeGaps";
 import type { AnalyticsOverview } from "../api/analytics";
 
@@ -12,10 +12,6 @@ function json(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-
-const REPOS: AdminRepository[] = [
-  { id: "r-1", name: "Handbook", description: null, configured: true },
-];
 
 const GAPS: KnowledgeGap[] = [
   {
@@ -53,15 +49,11 @@ describe("AdminInsightsPage", () => {
     vi.unstubAllGlobals();
   });
 
-  function mock(
-    opts: { repos?: AdminRepository[]; gaps?: KnowledgeGap[]; rejected?: GapRejection[] } = {},
-  ) {
-    const repos = opts.repos ?? REPOS;
+  function mock(opts: { gaps?: KnowledgeGap[]; rejected?: GapRejection[] } = {}) {
     const gaps = opts.gaps ?? GAPS;
     const rejected = opts.rejected ?? [];
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
-      if (url.endsWith("/admin/repositories")) return Promise.resolve(json(repos));
       if (url.includes("/knowledge-gaps/rejected")) return Promise.resolve(json(rejected));
       if (url.includes("/knowledge-gaps/reject") && method === "POST") {
         const body = JSON.parse(String(init?.body)) as { question: string; reason: string };
@@ -103,7 +95,7 @@ describe("AdminInsightsPage", () => {
 
   it("lists the selected repository's ranked knowledge gaps", async () => {
     mock();
-    render(<AdminInsightsPage />);
+    renderWithRepo(<AdminInsightsPage />);
     const gaps = await screen.findByRole("region", { name: "Knowledge gaps" });
     expect(await within(gaps).findByText("How do I reset 2FA?")).toBeInTheDocument();
     expect(within(gaps).getByText("What is the PTO policy?")).toBeInTheDocument();
@@ -113,7 +105,7 @@ describe("AdminInsightsPage", () => {
 
   it("answers a gap by writing an Admin Note prefilled with the question", async () => {
     mock();
-    render(<AdminInsightsPage />);
+    renderWithRepo(<AdminInsightsPage />);
     const gaps = await screen.findByRole("region", { name: "Knowledge gaps" });
     const row = (await within(gaps).findByText("How do I reset 2FA?")).closest("li") as HTMLElement;
 
@@ -139,7 +131,7 @@ describe("AdminInsightsPage", () => {
 
   it("shows the analytics overview", async () => {
     mock();
-    render(<AdminInsightsPage />);
+    renderWithRepo(<AdminInsightsPage />);
     const analytics = await screen.findByRole("region", { name: "Analytics" });
     // Totals + gap rate.
     expect(within(analytics).getByText("Total queries")).toBeInTheDocument();
@@ -161,7 +153,7 @@ describe("AdminInsightsPage", () => {
         },
       ],
     });
-    render(<AdminInsightsPage />);
+    renderWithRepo(<AdminInsightsPage />);
     await screen.findByText("What is the VPN?");
     await userEvent.click(screen.getByRole("button", { name: "Reject" }));
     // confirm blocked while reason empty:
@@ -178,5 +170,14 @@ describe("AdminInsightsPage", () => {
       question: "What is the VPN?",
       reason: "Out of scope",
     });
+  });
+
+  it("surfaces a repository-list load failure from the shared context", async () => {
+    mock();
+    renderWithRepo(
+      <AdminInsightsPage />,
+      repoValue({ error: "Could not load your repositories." }),
+    );
+    expect(await screen.findByText("Could not load your repositories.")).toBeInTheDocument();
   });
 });

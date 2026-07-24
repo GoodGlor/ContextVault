@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
-import { listAllRepositories, type AdminRepository } from "../api/repositories";
+import { useCurrentRepository } from "../repository/RepositoryContext";
 import {
   listKnowledgeGaps,
   rejectGap,
@@ -20,56 +20,41 @@ function errorMessage(err: unknown, fallback: string): string {
 /** The curation cockpit: knowledge gaps → Admin Notes → usage analytics (card #40). */
 export function AdminInsightsPage(): ReactNode {
   const { t } = useTranslation();
-  const [repos, setRepos] = useState<AdminRepository[] | null>(null);
-  const [reposError, setReposError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    listAllRepositories()
-      .then((rs) => !cancelled && setRepos(rs))
-      .catch(
-        (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, t("insights.errorLoadRepositories"))),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  if (reposError !== null) return <p className="error">{reposError}</p>;
-  if (repos === null) return <p>{t("insights.loading")}</p>;
+  const { error } = useCurrentRepository();
 
   return (
     <div className="admin-insights">
       <h1>{t("insights.title")}</h1>
-      <KnowledgeGapsPanel repos={repos} />
+      {error !== null && <p className="error">{error}</p>}
+      <KnowledgeGapsPanel />
       <AnalyticsPanel />
     </div>
   );
 }
 
-/** Ranked knowledge gaps for a repo, each answerable inline with an Admin Note. */
-function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode {
+/** Ranked knowledge gaps for the current repository (shared switcher), each
+ *  answerable inline with an Admin Note. */
+function KnowledgeGapsPanel(): ReactNode {
   const { t } = useTranslation();
-  const [selected, setSelected] = useState(repos[0]?.id ?? "");
+  const { currentRepoId } = useCurrentRepository();
   const [gaps, setGaps] = useState<KnowledgeGap[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [answered, setAnswered] = useState<string | null>(null);
   const [rejected, setRejected] = useState<GapRejection[] | null>(null);
 
   useEffect(() => {
-    if (selected === "") return;
+    if (currentRepoId === "") return;
     let cancelled = false;
     setGaps(null);
     setError(null);
     setAnswered(null);
     setRejected(null);
-    listKnowledgeGaps(selected)
+    listKnowledgeGaps(currentRepoId)
       .then((g) => !cancelled && setGaps(g))
       .catch(
         (err: unknown) => !cancelled && setError(errorMessage(err, t("insights.errorLoadGaps"))),
       );
-    listRejectedGaps(selected)
+    listRejectedGaps(currentRepoId)
       .then((r) => !cancelled && setRejected(r))
       .catch(
         (err: unknown) => !cancelled && setError(errorMessage(err, t("insights.errorLoadGaps"))),
@@ -77,7 +62,7 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
     return () => {
       cancelled = true;
     };
-  }, [selected, t]);
+  }, [currentRepoId, t]);
 
   const onAnswered = (question: string) => {
     // The gap closes once the note is ingested; drop it from the to-do list now.
@@ -87,7 +72,7 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
 
   const onRejected = (question: string) => {
     setGaps((prev) => prev?.filter((g) => g.question !== question) ?? prev);
-    listRejectedGaps(selected)
+    listRejectedGaps(currentRepoId)
       .then((r) => setRejected(r))
       .catch((err: unknown) => setError(errorMessage(err, t("insights.errorLoadGaps"))));
   };
@@ -95,14 +80,6 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
   return (
     <section aria-label={t("insights.knowledgeGapsAriaLabel")}>
       <h2>{t("insights.knowledgeGaps")}</h2>
-      <label htmlFor="gap-repo">{t("insights.repository")}</label>
-      <select id="gap-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
-        {repos.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name}
-          </option>
-        ))}
-      </select>
 
       {answered !== null && (
         <p className="success">{t("insights.noteSaved", { question: answered })}</p>
@@ -119,7 +96,7 @@ function KnowledgeGapsPanel({ repos }: { repos: AdminRepository[] }): ReactNode 
             <GapRow
               key={gap.question}
               gap={gap}
-              repositoryId={selected}
+              repositoryId={currentRepoId}
               onAnswered={() => onAnswered(gap.question)}
               onRejected={() => onRejected(gap.question)}
             />

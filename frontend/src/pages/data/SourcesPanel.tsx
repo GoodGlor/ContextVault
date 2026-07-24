@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../api/client";
-import { listAllRepositories, type AdminRepository } from "../api/repositories";
+import { ApiError } from "../../api/client";
+import { useCurrentRepository } from "../../repository/RepositoryContext";
 import {
   addWebSource,
   deleteSource,
@@ -10,59 +10,36 @@ import {
   listSources,
   uploadSource,
   type Source,
-} from "../api/sources";
+} from "../../api/sources";
 
-/** How often to re-poll while any source is still being ingested. */
 export const SOURCE_POLL_MS = 2000;
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.detail : fallback;
 }
 
-/** Admin surface for a repository's sources: upload, watch ingestion, delete. */
-export function AdminSourcesPage(): ReactNode {
+/** Documents & web sources for the current repository: upload, watch ingestion,
+ *  delete. Repo comes from the shared switcher. */
+export function SourcesPanel(): ReactNode {
   const { t } = useTranslation();
-  const [repos, setRepos] = useState<AdminRepository[] | null>(null);
-  const [reposError, setReposError] = useState<string | null>(null);
-  const [selected, setSelected] = useState("");
+  const { currentRepoId } = useCurrentRepository();
 
   const [sources, setSources] = useState<Source[] | null>(null);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
-
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-
   const [webUrl, setWebUrl] = useState("");
   const [addingWeb, setAddingWeb] = useState(false);
   const [webError, setWebError] = useState<string | null>(null);
 
-  // Load the admin's full repository list and default to the first one.
   useEffect(() => {
-    let cancelled = false;
-    listAllRepositories()
-      .then((rs) => {
-        if (cancelled) return;
-        setRepos(rs);
-        if (rs.length > 0) setSelected(rs[0].id);
-      })
-      .catch(
-        (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, t("adminSources.errorLoadRepos"))),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  // (Re)load sources whenever the selected repository changes.
-  useEffect(() => {
-    if (selected === "") return;
+    if (currentRepoId === "") return;
     let cancelled = false;
     setSources(null);
     setSourcesError(null);
-    listSources(selected)
+    listSources(currentRepoId)
       .then((s) => !cancelled && setSources(s))
       .catch(
         (err: unknown) =>
@@ -71,46 +48,36 @@ export function AdminSourcesPage(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [selected, t]);
+  }, [currentRepoId, t]);
 
-  // Poll while anything is still ingesting; re-runs (rescheduling) each time the
-  // list changes, and stops once every source has reached a terminal state.
   useEffect(() => {
-    if (selected === "" || sources === null) return;
+    if (currentRepoId === "" || sources === null) return;
     if (!sources.some((s) => isIngesting(s.status))) return;
     const timer = setTimeout(() => {
-      listSources(selected)
+      listSources(currentRepoId)
         .then(setSources)
         .catch(() => {
           /* transient; the next tick retries */
         });
     }, SOURCE_POLL_MS);
     return () => clearTimeout(timer);
-  }, [sources, selected]);
+  }, [sources, currentRepoId]);
 
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = (e: ChangeEvent<HTMLInputElement>) =>
     setFiles(Array.from(e.target.files ?? []));
-  };
 
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
-    if (selected === "" || files.length === 0) return;
+    if (currentRepoId === "" || files.length === 0) return;
     setUploading(true);
     setUploadError(null);
-    // Upload every selected file independently; one failure must not sink the
-    // others, so settle them all and append the ones that succeeded.
-    const results = await Promise.allSettled(files.map((f) => uploadSource(selected, f)));
+    const results = await Promise.allSettled(files.map((f) => uploadSource(currentRepoId, f)));
     const created = results
       .filter((r): r is PromiseFulfilledResult<Source> => r.status === "fulfilled")
       .map((r) => r.value);
-    if (created.length > 0) {
-      setSources((prev) => [...(prev ?? []), ...created]);
-    }
+    if (created.length > 0) setSources((prev) => [...(prev ?? []), ...created]);
     const failed = results.length - created.length;
     if (failed > 0) {
-      // When every upload was rejected for the same reason (e.g. images blocked
-      // because no model is configured), show that specific message; otherwise a
-      // partial failure gets the generic count.
       const firstRejected = results.find((r) => r.status === "rejected") as
         PromiseRejectedResult | undefined;
       const detail =
@@ -129,11 +96,11 @@ export function AdminSourcesPage(): ReactNode {
 
   const onAddWeb = async (e: FormEvent) => {
     e.preventDefault();
-    if (selected === "" || webUrl.trim() === "") return;
+    if (currentRepoId === "" || webUrl.trim() === "") return;
     setAddingWeb(true);
     setWebError(null);
     try {
-      const created = await addWebSource(selected, webUrl.trim());
+      const created = await addWebSource(currentRepoId, webUrl.trim());
       setSources((prev) => [...(prev ?? []), created]);
       setWebUrl("");
     } catch (err) {
@@ -152,15 +119,7 @@ export function AdminSourcesPage(): ReactNode {
     }
   };
 
-  if (reposError !== null) {
-    return <p className="error">{reposError}</p>;
-  }
-  if (repos === null) {
-    return <p>{t("adminSources.loadingRepos")}</p>;
-  }
-  if (repos.length === 0) {
-    return <p>{t("adminSources.noRepos")}</p>;
-  }
+  if (currentRepoId === "") return <p>{t("adminSources.noRepos")}</p>;
 
   const statusLabels: Record<Source["status"], string> = {
     pending: t("adminSources.statusPending"),
@@ -171,17 +130,6 @@ export function AdminSourcesPage(): ReactNode {
 
   return (
     <section className="admin-sources">
-      <h1>{t("adminSources.title")}</h1>
-
-      <label htmlFor="source-repo">{t("adminSources.repositoryLabel")}</label>
-      <select id="source-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
-        {repos.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name}
-          </option>
-        ))}
-      </select>
-
       <form className="source-upload" onSubmit={onUpload}>
         <label htmlFor="source-file">{t("adminSources.documentLabel")}</label>
         <input
