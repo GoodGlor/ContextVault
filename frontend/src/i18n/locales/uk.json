@@ -261,6 +261,7 @@
     "loadingConfiguration": "Завантаження конфігурації…",
     "provider": "Провайдер",
     "model": "Модель",
+    "modelManualPlaceholder": "напр. llama3.1:8b",
     "loadingModels": "Завантаження моделей…",
     "loadModels": "Завантажити моделі",
     "chooseModelPlaceholder": "Виберіть модель…",

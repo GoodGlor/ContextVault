@@ -257,6 +257,7 @@
     "loadingConfiguration": "Loading configuration…",
     "provider": "Provider",
     "model": "Model",
+    "modelManualPlaceholder": "e.g. llama3.1:8b",
     "loadingModels": "Loading models…",
     "loadModels": "Load models",
     "chooseModelPlaceholder": "Select a model…",

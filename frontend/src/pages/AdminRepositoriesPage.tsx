@@ -385,27 +385,47 @@ function RepoConfigPanel({
 
       {!providerVerified && <p className="notice">{t("repositories.selectedProviderNoKey")}</p>}
 
-      {/* The model is a single field: a dropdown that shows the current model and
-          the loaded alternatives. It appears once there's at least one option. */}
-      {modelOptions.length > 0 && (
+      {/* Cloud providers pick from the fetched catalogue; a custom OpenAI-compatible
+          endpoint takes a free-typed model id (local names are arbitrary), with any
+          fetched ids offered as datalist suggestions. */}
+      {provider === "custom" ? (
         <>
           <label htmlFor={modelSelectId}>{t("repositories.model")}</label>
-          <select
+          <input
             id={modelSelectId}
+            list={`${modelSelectId}-list`}
             value={model}
             onChange={(e) => setModel(e.target.value)}
+            placeholder={t("repositories.modelManualPlaceholder")}
             required
-          >
-            {!modelOptions.includes(model) && (
-              <option value="">{t("repositories.chooseModelPlaceholder")}</option>
-            )}
-            {modelOptions.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
+          />
+          <datalist id={`${modelSelectId}-list`}>
+            {models.map((m) => (
+              <option key={m} value={m} />
             ))}
-          </select>
+          </datalist>
         </>
+      ) : (
+        modelOptions.length > 0 && (
+          <>
+            <label htmlFor={modelSelectId}>{t("repositories.model")}</label>
+            <select
+              id={modelSelectId}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              required
+            >
+              {!modelOptions.includes(model) && (
+                <option value="">{t("repositories.chooseModelPlaceholder")}</option>
+              )}
+              {modelOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </>
+        )
       )}
       <button type="button" onClick={onLoadModels} disabled={loadingModels || !providerVerified}>
         {loadingModels ? t("repositories.loadingModels") : t("repositories.loadModels")}
