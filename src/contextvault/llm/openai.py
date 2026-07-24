@@ -44,6 +44,7 @@ class OpenAILLMProvider:
         api_key: str | None = None,
         model: str | None = None,
         max_tokens: int | None = None,
+        base_url: str | None = None,
     ) -> None:
         """Configure the provider.
 
@@ -51,11 +52,13 @@ class OpenAILLMProvider:
         built from the per-repository ``api_key`` (each repository carries its own
         encrypted key — there is no process-wide key fallback). ``model`` and
         ``max_tokens`` default to the ``openai_model`` / ``llm_max_tokens`` settings.
+        ``base_url`` aims the client at a custom OpenAI-compatible endpoint (e.g. a
+        self-hosted server); it defaults to the SDK's OpenAI endpoint when ``None``.
         """
         settings = get_settings()
         self._model = model or settings.openai_model
         self._max_tokens = max_tokens or settings.llm_max_tokens
-        self._client = client or AsyncOpenAI(api_key=api_key)
+        self._client = client or AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     async def answer(
         self,
