@@ -93,7 +93,7 @@ essentials:
 |---|---|
 | `DATABASE_URL` | Async Postgres connection string (matches `docker compose`). |
 | `SECRET_KEY` | JWT signing secret — set a strong value (≥ 32 bytes) in production. |
-| `ENCRYPTION_KEY` | Fernet key used to encrypt provider API keys at rest — **required** before any key is stored. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
+| `ENCRYPTION_KEY` | Fernet key used to encrypt provider API keys and reporting-database passwords at rest — **required** before any key is stored. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Gemini embedding model id (default `gemini-embedding-001`) and its output vector width (1024-dim, must match). |
 
 Per-repository LLM provider/model/key are configured at runtime through the admin UI,

@@ -98,6 +98,27 @@ def test_legitimate_aggregations_still_pass() -> None:
     assert "LIMIT 10000" in out
 
 
+def test_rejects_select_star() -> None:
+    _bad("SELECT * FROM orders")
+
+
+def test_rejects_select_star_in_subquery() -> None:
+    _bad("SELECT city FROM (SELECT * FROM orders) x")
+
+
+def test_rejects_select_star_in_cte() -> None:
+    _bad("WITH x AS (SELECT * FROM orders) SELECT city FROM x")
+
+
+def test_rejects_qualified_star() -> None:
+    _bad("SELECT o.* FROM orders o")
+
+
+def test_count_star_still_passes_and_gets_a_limit() -> None:
+    out = _ok("SELECT city, COUNT(*) AS cnt FROM orders GROUP BY city")
+    assert "LIMIT 10000" in out
+
+
 def test_mysql_dialect_parses() -> None:
     out = validate_sql(
         "SELECT city FROM orders WHERE created_at >= CURDATE() - INTERVAL 30 DAY",

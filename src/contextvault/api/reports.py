@@ -8,7 +8,9 @@ immediately with a ``PENDING`` row the caller polls via ``GET .../reports/{id}``
 
 Access follows the same shape as the query endpoint (``api/query.py``): the
 repository must exist (404) and, for a non-admin, an *active* grant is required
-(403) — admins bypass the grant check entirely, the same as elsewhere in the app.
+(403). For reports and schedules, admins bypass the grant check entirely — this
+is specific to this module (``query.py``/``conversations.py``/``sources.py``
+still apply ``has_active_grant`` to admins too).
 Report *history* is per-user by default (``GET .../reports`` returns only the
 caller's own rows); ``?all=true`` is an admin-only escape hatch onto every user's
 reports for this repository, and only that admin view exposes ``generated_sql`` —

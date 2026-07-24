@@ -60,7 +60,11 @@ def _numeric_stats(result: QueryResult) -> list[tuple[str, str]]:
     """(label, value) summary lines for each numeric column."""
     stats: list[tuple[str, str]] = [("Rows", str(len(result.rows)))]
     for index, name in enumerate(result.columns):
-        values = [row[index] for row in result.rows if isinstance(row[index], (int, float))]
+        values = [
+            row[index]
+            for row in result.rows
+            if isinstance(row[index], (int, float)) and not isinstance(row[index], bool)
+        ]
         if values and len(values) == len(result.rows):
             stats.append((f"Σ {name}", f"{sum(values):,.2f}"))
             stats.append((f"x̄ {name}", f"{sum(values) / len(values):,.2f}"))

@@ -96,6 +96,8 @@ def validate_sql(
             fname = _function_name(node)
             if fname in _FORBIDDEN_FUNCTIONS or fname.startswith(_FORBIDDEN_PREFIXES):
                 raise SQLValidationError(f"Forbidden function: {fname}.")
+        if isinstance(node, exp.Star) and not isinstance(node.parent, exp.Func):
+            raise SQLValidationError("SELECT * is not allowed; list columns explicitly.")
 
     allowed_tables = {t["table"].lower() for t in exposed_schema}
     allowed_columns = {c["name"].lower() for t in exposed_schema for c in t["columns"]}
