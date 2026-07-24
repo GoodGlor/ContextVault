@@ -26,8 +26,15 @@ class ProviderKeyInvalid(Exception):
     """The supplied API key failed its live check against the provider."""
 
 
-def _base_url_for(provider: LLMProviderName) -> str | None:
-    """The OpenAI-compatible base URL a provider needs (only OpenRouter)."""
+# OpenAI-compatible servers require *some* Authorization header even when they
+# ignore it; a keyless local endpoint gets this harmless placeholder at call time.
+# It is never persisted.
+NOAUTH_PLACEHOLDER = "sk-noauth"
+
+
+def _static_base_url(provider: LLMProviderName) -> str | None:
+    """The fixed OpenAI-compatible base URL a provider needs from settings (OpenRouter
+    only). Custom endpoints are per-row and resolved via ``get_provider_base_url``."""
     return get_settings().openrouter_base_url if provider == LLMProviderName.OPENROUTER else None
 
 
@@ -65,21 +72,52 @@ async def repo_is_answerable(session: AsyncSession, repo: Repository) -> bool:
     return repo.llm_provider in await verified_provider_names(session)
 
 
+async def get_provider_base_url(session: AsyncSession, provider: LLMProviderName) -> str | None:
+    """The OpenAI-compatible base URL for ``provider`` at call time.
+
+    Custom endpoints store their address on the row; OpenRouter uses the settings
+    default; every other provider talks to its SDK's own endpoint (``None``)."""
+    if provider == LLMProviderName.CUSTOM:
+        setting = await get_setting(session, provider)
+        return setting.base_url if setting else None
+    return _static_base_url(provider)
+
+
 async def get_provider_key(session: AsyncSession, provider: LLMProviderName) -> str | None:
-    """The decrypted key for ``provider``, or ``None`` when none is stored.
-
-    Decryption happens only here; the plaintext key never leaves the caller's frame."""
+    """The decrypted key for ``provider``, or ``None`` when none is stored (a keyless
+    custom endpoint stores no key). Decryption happens only here."""
     setting = await get_setting(session, provider)
-    return decrypt(setting.api_key_encrypted) if setting else None
+    if setting is None or setting.api_key_encrypted is None:
+        return None
+    return decrypt(setting.api_key_encrypted)
 
 
-async def verify_key(provider: LLMProviderName, api_key: str) -> None:
-    """Check ``api_key`` works for ``provider``, raising :class:`ProviderKeyInvalid` if not.
+async def get_call_credentials(
+    session: AsyncSession, provider: LLMProviderName
+) -> tuple[str, str | None]:
+    """The ``(api_key, base_url)`` to construct a client for ``provider``.
 
-    A successful provider ``list_models`` call is the liveness check — it exercises
-    both the key and network path without generating anything."""
+    A keyless custom endpoint yields the placeholder key so the client still sends
+    an Authorization header. Cloud providers are gated on a real key upstream, so
+    the placeholder is never reached for them."""
+    key = await get_provider_key(session, provider)
+    base_url = await get_provider_base_url(session, provider)
+    return key or NOAUTH_PLACEHOLDER, base_url
+
+
+async def verify_key(
+    provider: LLMProviderName, api_key: str | None, *, base_url: str | None = None
+) -> None:
+    """Check the endpoint answers, raising :class:`ProviderKeyInvalid` if not.
+
+    ``base_url`` is the endpoint being saved (custom) — it isn't in the DB yet, so
+    it is passed in. A keyless custom endpoint is verified with the placeholder key."""
     try:
-        await list_models(provider.value, api_key, base_url=_base_url_for(provider))
+        await list_models(
+            provider.value,
+            api_key or NOAUTH_PLACEHOLDER,
+            base_url=base_url or _static_base_url(provider),
+        )
     except ModelListError as exc:
         raise ProviderKeyInvalid(str(exc)) from exc
 
@@ -87,22 +125,23 @@ async def verify_key(provider: LLMProviderName, api_key: str) -> None:
 async def set_provider_key(
     session: AsyncSession,
     provider: LLMProviderName,
-    api_key: str,
+    api_key: str | None,
     *,
     now: datetime,
+    base_url: str | None = None,
 ) -> ProviderSetting:
-    """Verify ``api_key`` and store it for ``provider`` (upsert), stamping ``verified_at``.
+    """Verify then store ``provider``'s config (upsert), stamping ``verified_at``.
 
-    Raises :class:`ProviderKeyInvalid` — and stores nothing — when the key does not
-    work, so a saved key is always a working one. ``now`` is injected so the stamp is
-    testable."""
-    await verify_key(provider, api_key)
+    ``api_key`` may be ``None`` for a keyless custom endpoint; ``base_url`` is stored
+    for custom (``None`` for cloud providers). Stores nothing if verification fails."""
+    await verify_key(provider, api_key, base_url=base_url)
 
     setting = await get_setting(session, provider)
     if setting is None:
         setting = ProviderSetting(provider=provider)
         session.add(setting)
-    setting.api_key_encrypted = encrypt(api_key)
+    setting.api_key_encrypted = encrypt(api_key) if api_key else None
+    setting.base_url = base_url
     setting.verified_at = now
     await session.commit()
     await session.refresh(setting)

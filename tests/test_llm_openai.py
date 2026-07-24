@@ -179,3 +179,17 @@ async def test_blank_response_content_yields_empty_answer() -> None:
     assert result.text == ""
     assert result.citations == []
     assert result.not_in_vault is True
+
+
+def test_client_receives_base_url(monkeypatch: Any) -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_async_openai(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("contextvault.llm.openai.AsyncOpenAI", _fake_async_openai)
+    OpenAILLMProvider(api_key="sk-noauth", base_url="http://localhost:11434/v1")
+
+    assert captured["base_url"] == "http://localhost:11434/v1"
+    assert captured["api_key"] == "sk-noauth"

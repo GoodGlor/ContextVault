@@ -65,7 +65,7 @@ def test_repositories_carry_llm_model_choice() -> None:
 
     provider_type = repos.c.llm_provider.type
     assert isinstance(provider_type, sa.Enum)
-    assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic"}
+    assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic", "custom"}
 
     # No model chosen by default: both columns are nullable.
     assert repos.c.llm_provider.nullable is True
@@ -87,15 +87,17 @@ def test_repository_llm_selected_requires_provider_and_model() -> None:
 
 def test_provider_settings_table_holds_one_key_per_provider() -> None:
     """Global provider keys: one row per provider (unique), an encrypted key, and a
-    ``verified_at`` stamp set when the key last passed its live check."""
+    ``verified_at`` stamp set when the key last passed its live check. The key is
+    nullable so a custom (OpenAI-compatible) endpoint can be keyless — base URL only."""
     settings = _table("provider_settings")
     cols = settings.columns
-    assert {"provider", "api_key_encrypted", "verified_at"} <= set(cols.keys())
-    assert cols["api_key_encrypted"].nullable is False
+    assert {"provider", "api_key_encrypted", "verified_at", "base_url"} <= set(cols.keys())
+    assert cols["api_key_encrypted"].nullable is True
+    assert cols["base_url"].nullable is True
 
     provider_type = settings.c.provider.type
     assert isinstance(provider_type, sa.Enum)
-    assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic"}
+    assert set(provider_type.enums) == {"gemini", "openai", "openrouter", "anthropic", "custom"}
 
     uniques = {
         tuple(col.name for col in c.columns)

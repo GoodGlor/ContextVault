@@ -123,16 +123,20 @@ async def build_repo_llm(session: AsyncSession, repo: Repository) -> LLMProvider
     """Build the LLM provider a repository is configured to generate with (card #25).
 
     A repository picks a provider + model; the API *key* is shared from the global
-    provider settings (``ProviderSetting``). Routing looks up that provider's key,
-    decrypts it in memory, and constructs the matching provider so the query loop
-    generates through the repo's chosen LLM. The query endpoint refuses repositories
-    that aren't answerable (409) before reaching here, so provider, model, and a
-    verified key are all present.
+    provider settings (``ProviderSetting``). Routing looks up that provider's
+    credentials via ``get_call_credentials`` (decrypting the key in memory when one
+    is stored) and constructs the matching provider so the query loop generates
+    through the repo's chosen LLM. The query endpoint refuses repositories that
+    aren't answerable (409) before reaching here, so provider and model are always
+    present and the provider setting is always verified — though the key itself may
+    be absent for a keyless ``custom`` (OpenAI-compatible) endpoint, which resolves
+    to a placeholder credential instead.
     """
     assert repo.llm_provider is not None
-    api_key = await provider_service.get_provider_key(session, repo.llm_provider)
-    assert api_key is not None, "provider key missing; caller must gate on answerability"
-    return get_llm_provider(repo.llm_provider.value, api_key=api_key, model=repo.llm_model)
+    api_key, base_url = await provider_service.get_call_credentials(session, repo.llm_provider)
+    return get_llm_provider(
+        repo.llm_provider.value, api_key=api_key, model=repo.llm_model, base_url=base_url
+    )
 
 
 def get_llm_builder() -> RepoLLMBuilder:

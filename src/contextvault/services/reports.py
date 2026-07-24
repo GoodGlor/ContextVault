@@ -12,7 +12,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contextvault.core.config import get_settings
 from contextvault.core.crypto import decrypt
 from contextvault.db.session import SessionLocal
 from contextvault.models import (
@@ -74,10 +73,9 @@ async def generate_report(session: AsyncSession, report: GeneratedReport) -> Non
             raise ReportGenerationError(
                 "Repository is missing its database connection or LLM config."
             )
-        api_key = await provider_service.get_provider_key(session, repo.llm_provider)
-        if not api_key:
+        if not await provider_service.repo_is_answerable(session, repo):
             raise ReportGenerationError("The repository's LLM provider has no verified key.")
-        base_url = get_settings().openrouter_base_url if repo.llm_provider == "openrouter" else None
+        api_key, base_url = await provider_service.get_call_credentials(session, repo.llm_provider)
         # Release the pooled app-DB connection before slow LLM/reporting-DB work
         # (same discipline as ingestion's OCR path).
         await session.commit()

@@ -92,3 +92,17 @@ def test_supplied_model_and_key_thread_through_to_provider(monkeypatch: pytest.M
 def test_unknown_provider_raises() -> None:
     with pytest.raises(ValueError, match="not-yet-wired"):
         get_llm_provider("does-not-exist")
+
+
+def test_custom_provider_selectable_with_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "contextvault.llm.openai.AsyncOpenAI",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    provider: Any = get_llm_provider(
+        "custom", api_key="sk-noauth", model="llama3.1:8b", base_url="http://localhost:11434/v1"
+    )
+    assert isinstance(provider, OpenAILLMProvider)
+    assert provider._model == "llama3.1:8b"
+    assert captured["base_url"] == "http://localhost:11434/v1"

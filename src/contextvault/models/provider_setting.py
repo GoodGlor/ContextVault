@@ -4,7 +4,9 @@ API keys live here — once per provider — rather than on each repository: an 
 fills in a provider's key in the Providers settings, ContextVault verifies it works,
 and every repository that picks a model from that provider reuses this one key. The
 key is Fernet ciphertext at rest (``core/crypto.py``), decrypted only in memory at
-call time, and never returned in full.
+call time, and never returned in full. A custom (OpenAI-compatible) endpoint may be
+keyless — a stored base URL with no key — since some self-hosted servers require no
+credential.
 
 ``verified_at`` records when the stored key last passed a live check (a successful
 provider ``list_models`` call). It is set on every successful save and is the signal
@@ -32,7 +34,11 @@ class ProviderSetting(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         unique=True,
     )
-    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Custom (OpenAI-compatible) endpoints store their address here; it is not a
+    # secret (never encrypted) and, unlike the key, is returned in status responses.
+    # NULL for the cloud providers, which use fixed/hardcoded endpoints.
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Stamped whenever the stored key last passed a live provider check; a key is
     # only ever stored after it verifies, so this is always set for a stored row.
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

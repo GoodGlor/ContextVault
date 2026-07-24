@@ -178,7 +178,9 @@ async def test_image_upload_ocrs_via_repo_model(
 ) -> None:
     # An image is transcribed by the repo's vision model; stub that call so the test
     # is deterministic and offline, then prove the transcription is chunked/stored.
-    async def fake_transcribe(provider: str, api_key: str, model: str, *, image: bytes) -> str:
+    async def fake_transcribe(
+        provider: str, api_key: str, model: str, *, image: bytes, base_url: str | None = None
+    ) -> str:
         return "Оплата 1250 грн"
 
     monkeypatch.setattr("contextvault.services.ingestion.transcribe_image", fake_transcribe)

@@ -1,5 +1,6 @@
 """Orchestration: self-repair loop, status transitions, artifact persistence."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ from contextvault.models import (
     DatabaseType,
     GeneratedReport,
     LLMProviderName,
+    ProviderSetting,
     ReportStatus,
     Repository,
 )
@@ -24,6 +26,15 @@ async def _connected_repo(db_session: AsyncSession) -> tuple[Repository, Databas
     url = make_url(get_settings().database_url)
     repo = Repository(name="Vault", llm_provider="gemini", llm_model="gem-1")
     db_session.add(repo)
+    # ``generate_report`` gates on ``repo_is_answerable``, which requires a verified
+    # provider setting (not just the monkeypatched key lookup below).
+    db_session.add(
+        ProviderSetting(
+            provider=LLMProviderName.GEMINI,
+            api_key_encrypted=encrypt("unused-real-key"),
+            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
     await db_session.flush()
     conn = DatabaseConnection(
         repository_id=repo.id,

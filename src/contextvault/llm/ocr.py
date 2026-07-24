@@ -145,9 +145,9 @@ async def transcribe_image(
     """Transcribe the text in ``image`` using ``provider``'s vision model ``model``.
 
     ``image`` is raw upload bytes in any supported format (normalized to JPEG here).
-    ``base_url`` is used only for OpenRouter. Returns the transcribed text (possibly
-    empty when the image has none). Raises :class:`OCRError` for an unknown provider
-    or any provider-side failure.
+    ``base_url`` is used for OpenRouter and custom endpoints. Returns the transcribed
+    text (possibly empty when the image has none). Raises :class:`OCRError` for an
+    unknown provider or any provider-side failure.
     """
     jpeg = _to_jpeg(image)
     name = provider.lower()
@@ -159,6 +159,8 @@ async def transcribe_image(
         if name == "openrouter":
             base = base_url or get_settings().openrouter_base_url
             return await _ocr_openai_compatible(api_key, model, jpeg, base)
+        if name == "custom":
+            return await _ocr_openai_compatible(api_key, model, jpeg, base_url)
         if name == "anthropic":
             return await _ocr_anthropic(api_key, model, jpeg)
     except OCRError:

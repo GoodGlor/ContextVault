@@ -8,16 +8,24 @@ export interface ProviderStatus {
   configured: boolean;
   verified: boolean;
   api_key_masked: string | null;
+  base_url: string | null;
 }
 
-/** Every provider with its key status (admin-only). Always four rows. */
+/** Every provider with its key status (admin-only). Custom endpoints appear here too. */
 export function listProviders(): Promise<ProviderStatus[]> {
   return api.get<ProviderStatus[]>("/admin/providers");
 }
 
-/** Store (and first verify) a provider's API key. Rejects a key that doesn't work. */
-export function setProviderKey(provider: LLMProvider, apiKey: string): Promise<ProviderStatus> {
-  return api.put<ProviderStatus>(`/admin/providers/${provider}`, { api_key: apiKey });
+/** Store (and first verify) a provider's config. Cloud providers need `apiKey`; a
+ *  custom OpenAI-compatible endpoint needs `baseUrl` and may omit the key. */
+export function setProviderKey(
+  provider: LLMProvider,
+  input: { apiKey?: string; baseUrl?: string },
+): Promise<ProviderStatus> {
+  return api.put<ProviderStatus>(`/admin/providers/${provider}`, {
+    api_key: input.apiKey ?? null,
+    base_url: input.baseUrl ?? null,
+  });
 }
 
 /** Remove a provider's stored key (admin-only). */

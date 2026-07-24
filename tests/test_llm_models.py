@@ -8,6 +8,8 @@ a provider failure surfaces as ``ModelListError``.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import pytest
 
 from contextvault.llm.models import ModelListError, list_models
@@ -89,6 +91,36 @@ async def test_openrouter_returns_all_namespaced_ids(monkeypatch: pytest.MonkeyP
         "openrouter", api_key="sk-x", base_url="https://openrouter.ai/api/v1"
     )
     assert models == ["anthropic/claude-3.5-sonnet", "openai/gpt-4o"]
+
+
+async def test_custom_lists_all_models_via_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Model:
+        def __init__(self, mid: str) -> None:
+            self.id = mid
+
+    class _FakeModels:
+        def list(self) -> _FakeModels:
+            return self
+
+        def __aiter__(self) -> AsyncIterator[_Model]:
+            async def gen() -> AsyncIterator[_Model]:
+                for m in (_Model("llama3.1:8b"), _Model("nomic-embed-text")):
+                    yield m
+
+            return gen()
+
+    class _FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+            self.models = _FakeModels()
+
+    monkeypatch.setattr("contextvault.llm.models.AsyncOpenAI", _FakeClient)
+    result = await list_models("custom", "sk-noauth", base_url="http://localhost:11434/v1")
+    # No chat-family filter for custom: every id is returned (local names are arbitrary).
+    assert result == ["llama3.1:8b", "nomic-embed-text"]
+    assert captured["base_url"] == "http://localhost:11434/v1"
 
 
 async def test_gemini_keeps_only_generate_content(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -19,7 +19,7 @@ const REPOS: AdminRepository[] = [
 const UNCONFIGURED: LLMConfig = { provider: null, model: null, configured: false };
 const CONFIGURED: LLMConfig = { provider: "openai", model: "gpt-4o", configured: true };
 
-const ALL_PROVIDERS: LLMProvider[] = ["anthropic", "openai", "gemini", "openrouter"];
+const ALL_PROVIDERS: LLMProvider[] = ["anthropic", "openai", "gemini", "openrouter", "custom"];
 
 /** Provider-status rows, marking `verified` ones as configured+verified. */
 function providerRows(verified: LLMProvider[]) {
@@ -197,6 +197,29 @@ describe("AdminRepositoriesPage", () => {
 
     expect(await screen.findByText(/Providers tab/i)).toBeInTheDocument();
     expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  });
+
+  it("uses a free-text model input with datalist suggestions for the custom provider", async () => {
+    mock({ configs: { "r-2": UNCONFIGURED }, models: [], verified: ["custom"] });
+    render(<AdminRepositoriesPage />);
+    const runbook = (await screen.findByText("Runbook")).closest("li") as HTMLElement;
+    await userEvent.click(within(runbook).getByRole("button", { name: "Configure" }));
+
+    // Custom is the only verified provider, so it's preselected — no dropdown needed.
+    // With no models returned (no /v1/models on this server), the field must still be
+    // usable: a free-text input, not a dead empty <select>.
+    const modelInput = (await screen.findByLabelText("Model")) as HTMLInputElement;
+    expect(modelInput.tagName).toBe("INPUT");
+
+    await userEvent.type(modelInput, "llama3.1:8b");
+    await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
+
+    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({
+      provider: "custom",
+      model: "llama3.1:8b",
+    });
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
   it("surfaces an error when loading models fails", async () => {
