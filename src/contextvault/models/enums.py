@@ -45,3 +45,19 @@ class SourceStatus(enum.StrEnum):
     PROCESSING = "processing"
     DONE = "done"
     FAILED = "failed"
+
+
+class DatabaseType(enum.StrEnum):
+    """SQL engine of an admin-connected reporting database (DB-reports spec §2)."""
+
+    POSTGRES = "postgres"
+    MYSQL = "mysql"
+
+
+class ReportStatus(enum.StrEnum):
+    """Generation state of a report; mirrors SourceStatus's lifecycle."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"

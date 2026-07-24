@@ -35,6 +35,12 @@ LLM, so different corpora can answer with different models.
   `gemini-embedding-001` (1024-dim, asymmetric task types); embedding text is sent to
   the configured Gemini provider, consistent with how image OCR already sends content
   to the provider.
+- **Database-backed reports** — connect a read-only reporting database (Postgres or
+  MySQL) to a repository, ask for a report in natural language, and get back a
+  guardrailed NL→SQL→PDF report (charts included) generated in the background. Every
+  report is kept in a per-user history with download-again access; a finished report
+  can be frozen into a nightly schedule that re-runs its exact validated SQL with no
+  further LLM call.
 
 ## Tech stack
 
@@ -87,7 +93,7 @@ essentials:
 |---|---|
 | `DATABASE_URL` | Async Postgres connection string (matches `docker compose`). |
 | `SECRET_KEY` | JWT signing secret — set a strong value (≥ 32 bytes) in production. |
-| `ENCRYPTION_KEY` | Fernet key used to encrypt provider API keys at rest — **required** before any key is stored. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
+| `ENCRYPTION_KEY` | Fernet key used to encrypt provider API keys and reporting-database passwords at rest — **required** before any key is stored. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Gemini embedding model id (default `gemini-embedding-001`) and its output vector width (1024-dim, must match). |
 
 Per-repository LLM provider/model/key are configured at runtime through the admin UI,

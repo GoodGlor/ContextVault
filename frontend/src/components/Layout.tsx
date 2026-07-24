@@ -21,11 +21,18 @@ export function Layout(): ReactNode {
         <Link to="/" className="app-brand">
           ContextVault
         </Link>
+        <nav className="app-nav">
+          <NavLink to="/" end>
+            {t("nav.query")}
+          </NavLink>
+          <NavLink to="/reports">{t("nav.reports")}</NavLink>
+        </nav>
         {session?.role === "admin" && (
           <nav className="app-nav">
             <NavLink to="/admin/repositories">{t("nav.repositories")}</NavLink>
             <NavLink to="/admin/providers">{t("nav.providers")}</NavLink>
             <NavLink to="/admin/sources">{t("nav.sources")}</NavLink>
+            <NavLink to="/admin/database">{t("nav.database")}</NavLink>
             <NavLink to="/admin/users">{t("nav.users")}</NavLink>
             <NavLink to="/admin/insights">{t("nav.insights")}</NavLink>
           </nav>

@@ -5,10 +5,12 @@ import { RequireAuth, RequireSession } from "./auth/RequireAuth";
 import { LoginPage } from "./pages/LoginPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { QueryPage } from "./pages/QueryPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
 import { AdminProvidersPage } from "./pages/AdminProvidersPage";
 import { AdminSourcesPage } from "./pages/AdminSourcesPage";
+import { AdminDatabasePage } from "./pages/AdminDatabasePage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminInsightsPage } from "./pages/AdminInsightsPage";
 
@@ -34,6 +36,7 @@ export function App(): ReactNode {
         }
       >
         <Route path="/" element={<QueryPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route
           path="/admin/repositories"
           element={
@@ -55,6 +58,14 @@ export function App(): ReactNode {
           element={
             <RequireAuth requireAdmin>
               <AdminSourcesPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/database"
+          element={
+            <RequireAuth requireAdmin>
+              <AdminDatabasePage />
             </RequireAuth>
           }
         />

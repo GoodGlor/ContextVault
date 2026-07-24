@@ -25,6 +25,10 @@ dependencies = [
     "pillow>=12.3.0",
     "trafilatura>=2.1.0",
     "pillow-heif>=1.5.0",
+    "aiomysql>=0.3.2",
+    "sqlglot>=30.13.0",
+    "matplotlib>=3.11.1",
+    "fpdf2>=2.8.7",
 ]
 
 [dependency-groups]

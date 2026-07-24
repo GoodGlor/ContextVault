@@ -67,9 +67,29 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return (await res.json()) as T;
 }
 
+/** Fetch a binary response body (e.g. a PDF download). Parallels `apiFetch`'s
+ *  auth/error handling but cannot reuse it — `apiFetch` always calls
+ *  `response.json()`, which would choke on non-JSON bytes — so this applies the
+ *  same bearer-token header and `!ok` → `ApiError` logic and resolves the body
+ *  with `response.blob()` instead. */
+async function apiFetchBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`/api${path}`, { ...init, headers });
+
+  if (res.status === 401 && onUnauthorized) onUnauthorized();
+
+  if (!res.ok) throw new ApiError(res.status, await extractDetail(res));
+
+  return await res.blob();
+}
+
 /** Convenience helpers for the common verbs. */
 export const api = {
   get: <T>(path: string) => apiFetch<T>(path),
+  getBlob: (path: string) => apiFetchBlob(path),
   post: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, {
       method: "POST",
