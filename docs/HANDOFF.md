@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-24 (workspace-sidebar + unified Data page, task 8/8 — pending whole-branch review)
+- **Last updated:** 2026-07-24 19:53 EEST (custom OpenAI-compatible LLM provider — SDD complete, PR pending)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`. *(Recent feature work has shipped outside the board via superpowers SDD.)*
 
@@ -9,34 +9,38 @@
 ## TL;DR
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
-backend, React/Vite SPA), feature-complete.
+backend, React/Vite SPA), feature-complete. **In flight: the `custom` OpenAI-compatible LLM
+provider — 15 commits on `feat/custom-openai-compatible-provider`, full gate green, whole-branch
+review says merge-as-is. About to open a PR (not yet pushed at time of writing).**
 
-**In flight — workspace-sidebar redesign, branch `redesign/workspace-sidebar` (not yet
-merged).** Frontend-only: top header nav → left sidebar with grouped nav + a repository
-switcher that's the single source of the current repo (`RepositoryContext`); Sources +
-Database admin pages merged into one tabbed **Data** page (`/admin/sources` and
-`/admin/database` now redirect there). Built via superpowers SDD (8 tasks); this is the
-final task (full gate + docs) — next is the whole-branch review, then a PR. Details
-under *Done recently*.
+**This session — custom (OpenAI-compatible) LLM provider — Phase 1 (branch `feat/custom-openai-compatible-provider`).**
+A new **`custom`** provider ("Custom, OpenAI-compatible") lets a deployment point chat / report /
+OCR at a self-hosted model (Ollama, vLLM, LM Studio, TGI, LocalAI) via **one global endpoint** —
+a nullable `base_url` column on `provider_settings` + an **optional** API key (keyless local
+servers allowed; a `sk-noauth` placeholder is used only at client-construction time, never
+persisted). It reuses the OpenAI Chat Completions wire path (like OpenRouter). One service seam,
+`provider_service.get_call_credentials(session, provider) -> (api_key_or_placeholder, base_url)`,
+resolves credentials at **every** call site (chat via `deps.build_repo_llm`, reports, OCR/ingestion,
+model-list endpoint). Per-repo model selection with **free-text entry** for arbitrary local ids.
+EN+UK i18n. Built via superpowers SDD (11 tasks + gate-fix + whole-branch review on opus). Full
+local gate green — backend **498✓** (ruff/format/mypy/alembic/pytest), frontend **109✓** (lint/
+format/typecheck/test/build). Details under *Done recently*.
 
-**Merged this session — Database-backed reports — #116 (squash `1eb528e`).** An admin connects a
-read-only Postgres/MySQL database to a repository (encrypted credentials, allow-listed
-tables/columns); a granted user asks in natural language ("report from 1 Jan to 31 Mar for
-Kyiv"); the repo's LLM writes SQL that passes a **5-layer guardrail**; it runs read-only +
-statement-timed-out; the result renders to a **Cyrillic-safe PDF** (chart + stats); per-user
-history + **nightly schedules** that re-run frozen SQL. Built via superpowers SDD (14 tasks,
-per-task review + final whole-branch review). Backend **484✓**, frontend **93✓**, CI green.
-Details under *Done recently*.
+**⚠️ LOAD-BEARING CAVEAT — Phase 1 is NOT air-gapped.** Ingestion still calls **Gemini** to embed
+documents (`deps.get_embedder` unchanged), so document text still leaves the network at index time.
+A repo can chat via `custom`, but the *deployment* still needs a verified Gemini key to ingest.
+Removing that coupling (local embeddings + per-dimension vector tables) is **Phase 2** — see the
+spec's §11. Do not describe Phase 1 as "air-gapped" or "nothing leaves your network."
 
-**⚠️ Two owner actions now gate real use of the reports feature:**
+**⚠️ Two owner actions still gate real use of the database-backed reports feature (#116):**
 1. **Rotate the three exposed `.env` secrets** — `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, and
    `ENCRYPTION_KEY` were exposed in a screenshot earlier. Rotating `ENCRYPTION_KEY` invalidates
    the provider keys encrypted in `provider_settings` (re-enter them in the Providers tab) **and**
    any reporting-DB passwords (re-enter connections). Do this **before** creating real database
    connections, so credentials aren't stored under a burned key and then lost on the next rotation.
-2. **MySQL is beta / untested live** — the connector + guardrails are dialect-abstracted and
-   unit-tested through that abstraction, but no CI service spins up a real MySQL and the MySQL path
-   has never run against an actual server. Postgres is the only dialect verified end-to-end.
+2. **MySQL is beta / untested live** — the reporting-DB connector + guardrails are dialect-abstracted
+   and unit-tested through that abstraction, but no CI service spins up a real MySQL and the MySQL
+   path has never run against an actual server. Postgres is the only dialect verified end-to-end.
 
 **Owner note (from #112, still applies to existing data):** old bge-m3 vectors are incompatible
 with Gemini's embedding space — `TRUNCATE chunks;` + re-ingest before trusting retrieval on a
@@ -48,163 +52,149 @@ pre-Gemini DB, and set a verified Gemini provider key or every ingest/query 409s
 
 | | Value |
 |---|---|
-| Current branch | `redesign/workspace-sidebar` (local, not yet pushed) — frontend workspace-sidebar + unified Data page, built via superpowers SDD (8 tasks); this is task 8/8 (final gate + docs), next step is the whole-branch review before opening a PR |
-| `main` HEAD | `1eb528e` (#116, database-backed reports) |
-| In flight | `redesign/workspace-sidebar`, not yet pushed/PR'd — pending whole-branch review |
-| Parked | `wip/passage-toggle` (off an older `main`) — a prior session's passage view/hide toggle, **never reviewed/merged**; carries stale HANDOFF edits. Rebase, review, PR-or-drop. |
-| CI | green on #116 |
-| Local infra | `contextvault-db` (pgvector pg16) up + migrated (head `b8c2d5e7f901`) |
-| Migration head | `b8c2d5e7f901` (db-reports: `database_connections`, `generated_reports`, `report_schedules`; enums `database_type`, `report_status`) |
+| Current branch | `feat/custom-openai-compatible-provider` (HEAD `0efa41c`, **15 commits ahead of `main`, not yet pushed**) |
+| `main` HEAD | `c4ec625` (#117, workspace-sidebar redesign) — unchanged this session |
+| In flight | **custom-provider branch** — full gate green, whole-branch review = merge-as-is; PR to be opened |
+| Parked | `wip/passage-toggle` (off an older `main`) — a prior session's passage view/hide toggle, **never reviewed/merged**. Rebase, review, PR-or-drop. |
+| CI | not yet run remotely (branch unpushed); local CI-parity gate green (backend 498✓, frontend 109✓) |
+| Local infra | `contextvault-db` (pgvector pg16) up + migrated (head `c1d2e3f40506`) |
+| Migration head | **`c1d2e3f40506`** (this session — `custom` enum value + `base_url` column + nullable key). Prev head `b8c2d5e7f901`. |
 
-Recent merged PRs: **#116** database-backed reports (`1eb528e`) · **#115** admin-note grounding +
-auto-grant creator (`c6f1e3a`) · **#114** persisted conversations + gap rejection (`3ec75c6`).
+Recent merged PRs: **#117** workspace-sidebar redesign (`c4ec625`) · **#116** database-backed
+reports (`1eb528e`) · **#115** admin-note grounding + auto-grant creator (`c6f1e3a`).
 
 ---
 
 ## Done recently (this session)
 
-### Workspace sidebar + unified Data page — branch `redesign/workspace-sidebar` (superpowers SDD, 8 tasks; not yet merged — whole-branch review is next)
+### Custom (OpenAI-compatible) LLM provider — Phase 1 — branch `feat/custom-openai-compatible-provider` (superpowers SDD, 11 tasks + gate-fix + whole-branch review on opus)
 
-Frontend-only redesign: the old top header nav is gone, replaced by a left **sidebar**
-(`src/components/Sidebar.tsx`) grouped into *Workspace* (Ask, Reports — everyone),
-*Manage this repo* (Data, Providers, Insights — admin-only), and *Admin* (Repositories,
-Users — admin-only). A **repository switcher** at the top of the sidebar is now the
-single source of the current repo: a new `RepositoryContext`/`RepositoryProvider`
-(`src/repository/`) owns `currentRepoId` (persisted to `localStorage`) and every
-repo-scoped page (Ask, Reports, Data, Insights) reads it via `useCurrentRepository()`
-instead of holding its own repo picker. The former **Sources** and **Database** admin
-pages are merged into one **Data** page (`/admin/data`, tabs `?tab=documents|database`,
-extracted as `SourcesPanel`/`DatabasePanel`); `/admin/sources` and `/admin/database` are
-now `<Navigate>` redirects to `/admin/data`, so old bookmarks/links keep working. The
-merged nav label is a one-string i18n change (`nav.data` / `data.title` in both
-`en.json`/`uk.json`); the now-dead `nav.sources`, `nav.database`, `query.repository`,
-`reports.repository`, `reports.errorLoadRepos` keys were deleted from both locales
-(verified zero references first). Full frontend gate green (lint/format/typecheck/test/
-build) with pristine test output (no `act(...)` warnings). **Follow-up, not a CI
-blocker:** CI does not run the Playwright e2e specs, but any spec that navigated via the
-old top-header links (rather than the sidebar) will need selector updates before it can
-pass again — check `frontend/e2e/` next time e2e is run.
+Spec → plan under `docs/superpowers/` (`2026-07-24-custom-openai-compatible-provider.md` ×2; committed
+`7f8aa3a` spec / `da7c0d0` plan / `fb23cf1` plan-fix). Additive backend + frontend, one Alembic
+migration. What shipped (commit-by-commit, `3266b19`..`0efa41c`):
 
-### Database-backed reports — merged as #116 (squash `1eb528e`; superpowers SDD, 14 tasks + final review)
+- **Data layer (`3266b19`).** `LLMProviderName.CUSTOM = "custom"`; nullable `base_url` (Text, not a
+  secret — never encrypted) on `provider_settings`; `api_key_encrypted` relaxed to nullable. Migration
+  `c1d2e3f40506` follows the repo's enum pattern (`op.execute("COMMIT")` before `ALTER TYPE ... ADD
+  VALUE`, like `a1b2c3d4e5f6`); downgrade leaves the enum value (PG can't drop one).
+- **Service seam (`20d3bc8`).** `get_provider_base_url`, `get_call_credentials -> (key_or_placeholder,
+  base_url)`, `NOAUTH_PLACEHOLDER = "sk-noauth"` (never persisted), keyless verify/store; `get_provider_key`
+  made NULL-safe (no `decrypt(None)` crash). `_base_url_for` → static `_static_base_url` + async resolver.
+- **Answer path + dispatch (`4ff0438`, `9614d15`).** `base_url` threaded through `OpenAILLMProvider` +
+  `get_llm_provider` (custom → OpenAI client at `base_url`); `custom` branch in model-listing (rename
+  `_list_openrouter` → `_list_openai_compatible`, behavior-preserving), OCR, textgen.
+- **All call sites (`fe87bce`).** deps/reports/ingestion/model-list endpoint all route through
+  `get_call_credentials`; dropped the `assert key is not None` (keyless legit). Two deliberate,
+  plan-mandated behavior changes: reports gates on `repo_is_answerable` (now needs `llm_selected`);
+  `list_llm_models` gates on *verified* not *key-present*.
+- **API + frontend (`18471be`, `68847ae`, `580ba37`, `f61a9ea`).** PUT `/admin/providers/{p}` takes
+  optional key + `base_url` (custom requires base_url, cloud still requires key); status returns
+  `base_url` unmasked. Providers page renders the custom row (base URL, optional key, **not-air-gapped
+  embeddings note**); repo config uses a **free-text model input + datalist** so an empty `/v1/models`
+  is never a dead end. EN+UK i18n (`86eb16c` prettier follow-up).
+- **Docs (`1ad07f5`) + gate-fix (`0efa41c`).** `docs/architecture.md` custom-provider subsection + the
+  Gemini-embeddings caveat; fixed 2 stale docstrings (deps `build_repo_llm`, providers "four→five").
+  Gate-fix: the per-task runs missed `ruff format --check` + `mypy` — fixed 4 format files + 8 mypy
+  annotations on test helpers (mechanical, no logic change).
+- **Whole-branch review (opus): Ready to merge = YES**, zero Critical/Important. The one real risk
+  (a half-threaded `base_url` leaving a site on the SDK default endpoint) verified absent at all sites.
+- **Open follow-ups (non-blocking, accepted):** (a) **SSRF hardening** for the admin-supplied `base_url`
+  (fetched server-side at verify + every call) — deferred, consistent with `web_source.py` posture; (b)
+  provider **e2e** selector updates (CI skips e2e); (c) cosmetic minors logged in `.superpowers/sdd/progress.md`
+  (reports error message wording; `noModels` also shows for custom empty list; "Remove key" on custom
+  removes the whole endpoint). Phase 2 (local embeddings) / Phase 3 (Ollama-native UX) per spec §11.
 
-Spec → plan under `docs/superpowers/` (`2026-07-23-db-reports-design.md` / `-db-reports.md`); each
-task built TDD (RED→GREEN) with its own commit and an independent per-task review; a final
-whole-branch review caught a Critical bug the per-task reviews missed. What shipped:
-
-- **Reporting-DB connections.** `DatabaseConnection` model + `services/report_db.py` (per-call
-  async engine; connection test + `information_schema` introspection; **no SSRF guard by design** —
-  internal DB hosts are the point, boundary is admin-only + encrypted creds). Admin **Database**
-  tab: connect, introspect, edit an allow-list of exposed tables/columns (with descriptions). Only
-  allow-listed schema is shown to the LLM or queryable. `PUT`/`GET`/`PATCH .../database` +
-  `POST .../database/introspect`, all admin-only; passwords Fernet-encrypted, never returned.
-- **NL → guardrailed SQL → PDF.** `report_llm.py` prompts the repo's configured LLM with the
-  allow-listed schema only, demanding a strict single-JSON contract (SQL + chart spec). The
-  **guardrail** (`services/sql_guardrails.py`, `sqlglot` AST) enforces: exactly one `SELECT`; no
-  DDL/DML/multi-statement; allow-listed tables **and columns** only; **no `SELECT *`** (would leak
-  excluded columns); no schema-qualified tables; no `pg_`/`lo_`/`dblink` function family; no
-  `SELECT INTO`; injected `LIMIT`. Execution (`services/report_execution.py`) runs in a
-  rolled-back READ ONLY transaction with a statement timeout. The orchestrator
-  (`services/reports.py`) feeds guardrail/execution errors back to the LLM for up to 2 self-repair
-  retries. Rendering (`services/report_render.py`) → matplotlib chart + Unicode-safe `fpdf2` PDF
-  (DejaVu font, so Cyrillic renders — verified via pypdf text round-trip).
-- **Per-user history + PDF download.** `GeneratedReport` rows are per-requesting-user;
-  `GET .../reports` returns the caller's own (admin `?all=true` sees all + the audit-trail
-  `generated_sql`); `GET .../reports/{id}/download` streams the stored PDF bytes; owner-or-admin
-  only, **404 (never 403)** for another user's report so existence isn't leaked; PDF bytes never
-  appear in a JSON body.
-- **Nightly schedules.** A schedule *freezes* a `DONE` report's already-validated SQL + chart spec;
-  the scheduler (`services/report_scheduler.py`, an in-process asyncio loop started **only** in the
-  FastAPI lifespan) re-executes the frozen SQL verbatim at `run_at_time` with **no further LLM
-  call**. Single-process assumption (add a DB advisory lock if ever multi-worker). `report-schedules`
-  API: freeze/list/toggle/delete.
-- **Frontend.** `ReportsPage` (any authenticated user): pick a granted repo, request a report,
-  2s-poll while generating, download the PDF, see failures inline, freeze a done report into a
-  nightly schedule + manage schedules. `/reports` route + nav visible to all (unlike the admin-only
-  Database tab). `api.getBlob` added to the client for binary download.
-- **Final whole-branch review caught + fixed a Critical:** `SELECT *` bypassed the *column*
-  allow-list (`exp.Star` ≠ `exp.Column`), leaking deliberately-excluded columns (PII) into PDFs.
-  Fixed (reject projection `Star`, preserve `COUNT(*)`; verified via the real validator). Also
-  folded in: bool excluded from numeric PDF stats, and doc/comment accuracy. **Deferred, non-blocking
-  minors are listed in `.superpowers/sdd/progress.md`** (git-ignored) — see *Next up* for the two
-  worth tracking.
-- **CI-only test flake fixed post-open:** `client.test.ts` asserted `toBeInstanceOf(Blob)`; CI's
-  fetch returns a Blob from a different JS realm than the test's global `Blob`, so the identity
-  check failed in CI (passed locally). Now asserts `.type`/`.size` (realm-agnostic).
-
-*Older completed work (#114, #115, #105–#112 etc.) demoted to History.*
+*Workspace-sidebar redesign (#117), database-backed reports (#116) and older work under History.*
 
 ---
 
 ## Next up
 
-1. **Rotate the three exposed `.env` secrets** (see TL;DR) — owner action, now the top item because
-   database-backed reports store reporting-DB passwords under `ENCRYPTION_KEY`. Settle the key
-   **before** creating real connections; re-enter provider keys (Providers tab) and any DB
-   connections afterward.
-2. **Follow-ups for the reports feature** (each a candidate card):
+1. **Review + merge the custom-provider PR** (branch `feat/custom-openai-compatible-provider`). Full
+   local gate green, whole-branch review = merge-as-is. Per owner merge policy: open PR, watch remote
+   CI green, **owner merges**. After merge, `git reset --hard origin/main` (squash-merge diverges local).
+   Optional pre-/post-merge polish (all non-blocking, in `.superpowers/sdd/progress.md`): tighten the
+   reports "no verified key" message when the real gap is a missing model; consider suppressing `noModels`
+   for custom; file SSRF-hardening + e2e-selector follow-up cards.
+2. **Rotate the three exposed `.env` secrets** (see the ⚠️ owner-actions block in the TL;DR above) —
+   owner action, because database-backed reports store reporting-DB passwords under `ENCRYPTION_KEY`.
+   Settle the key **before** creating real connections; re-enter provider keys (Providers tab) and any
+   DB connections afterward.
+3. **Follow-ups for the reports feature (#116)** (each a candidate card):
    - **No retention/cleanup of old PDFs.** `GeneratedReport.pdf_data` (bytea) accumulates forever —
-     no TTL/size-cap/purge. A busy nightly schedule grows the table unbounded; needs a policy before
-     real use.
+     no TTL/size-cap/purge. A busy nightly schedule grows the table unbounded; needs a policy.
    - **MySQL never run live** (beta) — add a CI MySQL service or hand-smoke-test before relying on it.
    - **Frozen schedules aren't re-validated against a later-narrowed allow-list** (spec-accepted):
-     if an admin removes a now-sensitive column from the allow-list, existing schedules keep running
-     the old frozen SQL. Bounded (owner already saw the report when they froze it); worth a doc note
-     and, if tightening, a re-validate-on-run pass.
+     removing a now-sensitive column doesn't stop existing schedules from running the old frozen SQL.
    - **Revoked-grant users can still download their own past reports** (`get`/`download`/`delete`
-     gate on owner-or-admin, not active grant — unlike `create`/`list`). Consistent-with-create would
-     re-check the grant.
-   - **No per-user row-level restrictions** (repo-level grants only) and **no DOCX/PPTX export**
-     (PDF only) — both real gaps if the trust model or output needs grow.
-3. **Re-tune `retrieval_min_score` for Gemini embeddings (worth a card).** With Gemini even
+     gate on owner-or-admin, not active grant — unlike `create`/`list`).
+   - **No per-user row-level restrictions** (repo-level grants only) and **no DOCX/PPTX export**.
+4. **Redesign follow-ups (#117)** — e2e selector updates for the sidebar nav (before next e2e run) and
+   the two minor a11y-polish items. Small; do when convenient.
+5. **Re-tune `retrieval_min_score` for Gemini embeddings (worth a card).** With Gemini even
    loosely-related chunks score ~0.7, so the current `0.3` threshold (tuned for bge-m3) barely
    filters. Flagged since #112.
-4. **Decide the fate of `wip/passage-toggle`** — parked passage view/hide toggle (frontend, green
-   locally an earlier session, never reviewed). Rebase onto current `main`, review, PR or drop.
-5. **SSRF DNS-rebinding / TOCTOU hardening** (`services/web_source.py`) — open from #100.
-   `getaddrinfo` validates the host but httpx re-resolves at connect; not pinned to the validated
-   IP. Safe as-is (admin-only, redirects re-validated); harden + `/security-review` before non-admin
-   exposure.
+6. **Decide the fate of `wip/passage-toggle`** — parked passage view/hide toggle, never reviewed.
+   Rebase onto current `main`, review, PR or drop.
+7. **SSRF DNS-rebinding / TOCTOU hardening** (`services/web_source.py`) — open from #100; **now also
+   applies to the custom provider's admin-supplied `base_url`** (fetched server-side at verify + every
+   call). Harden both + `/security-review` before non-admin exposure.
+   `getaddrinfo` validates the host but httpx re-resolves at connect; not pinned to the validated IP.
+   Safe as-is (admin-only, redirects re-validated); harden + `/security-review` before non-admin use.
 
 ---
 
 ## Open known issues / gotchas
 
-- **UUID primary keys are populated on *flush*, not at construction.** `UUIDPrimaryKeyMixin` uses
-  `default=uuid.uuid4`, applied at INSERT. If you need a new row's `id` for an FK (e.g. grant the
-  creator on a just-created repo; link a report to a connection), `await session.flush()` first —
-  else the FK goes in NULL.
-- **The SQL guardrail is column-level, not just table-level** — `sql_guardrails.validate_sql` is
-  the *only* column-visibility boundary (the read-only DB role blocks writes, not reads). Any change
-  there is security-critical: err toward reject, and remember `exp.Star` (`SELECT *`, `t.*`) is not
-  an `exp.Column`, so it needs its own check (this bit the Critical in #116).
+- **All LLM credential resolution goes through one seam: `provider_service.get_call_credentials(session,
+  provider) -> (api_key_or_placeholder, base_url)`.** Never re-fetch a key or hardcode a base URL at a
+  call site — a half-threaded `base_url` silently sends `custom` traffic to OpenAI's default endpoint.
+  `custom` may be **keyless**: the seam substitutes `NOAUTH_PLACEHOLDER = "sk-noauth"` at client
+  construction only (never persisted), and `get_provider_key` returns `None` for a NULL stored key (do
+  not `decrypt(None)`). A repo is "answerable" on `verified_at` alone (key optional for custom).
+- **`custom` is NOT air-gapped (Phase 1).** Ingestion still requires a verified **Gemini** key to embed
+  (`deps.get_embedder` unchanged). The Providers UI says so; keep that framing in any copy/docs.
+- **Adding an `llm_provider` enum value needs the COMMIT-first migration pattern** — `op.execute("COMMIT")`
+  before `ALTER TYPE llm_provider ADD VALUE IF NOT EXISTS '…'` (see `c1d2e3f40506` / `a1b2c3d4e5f6`).
+  Postgres can't drop an enum value, so downgrades leave it in place.
+- **The repository is one shared, route-scoped context now.** `src/repository/RepositoryContext` is
+  the single source of `currentRepoId`; repo-scoped pages must read `useCurrentRepository()`, not add
+  their own picker. The provider calls `useLocation()`, so it must stay mounted **under a Router**
+  (it's a route element in `App.tsx` — fine). Workspace routes see the granted list, `/admin/*` sees
+  all (admins) — if you add a new repo-scoped page, put it under the right path or the scope will be
+  wrong.
+- **The SQL guardrail is column-level, not just table-level** — `sql_guardrails.validate_sql` is the
+  *only* column-visibility boundary (the read-only DB role blocks writes, not reads). Any change there
+  is security-critical: err toward reject, and remember `exp.Star` (`SELECT *`, `t.*`) is not an
+  `exp.Column`, so it needs its own check (this bit the Critical in #116).
 - **`toBeInstanceOf(Blob)` (and other cross-realm `instanceof`) is flaky in vitest CI** — CI's fetch
   returns a Blob from a different realm than the test's global `Blob`; assert on `.type`/`.size`/
   duck-typed shape instead.
+- **UUID primary keys populate on *flush*, not construction.** `UUIDPrimaryKeyMixin` uses
+  `default=uuid.uuid4` at INSERT. If you need a new row's `id` for an FK, `await session.flush()` first
+  or the FK goes in NULL.
 - **Don't query `db_session` directly right after an API call that triggers background work**
-  (ingestion OR report generation, both use `run_*` against the test session) — a direct
-  `db_session.execute(...)` afterward **hangs**. Verify through the API instead.
+  (ingestion OR report generation) — a direct `db_session.execute(...)` afterward **hangs**. Verify
+  through the API instead.
 - **In tests, TRUNCATE from the fixture deadlocks a same-Postgres reporting connection** — the
-  `db_session` fixture now clears with per-table `DELETE` (reversed `sorted_tables`) instead of
-  `TRUNCATE … CASCADE`, because TRUNCATE's ACCESS EXCLUSIVE lock (held for the whole test) blocked
-  `report_execution`'s independent connection to the same test DB. Isolation is unchanged (still
-  inside the rolled-back outer txn); it's dynamic (new tables auto-covered).
-- **Stale `.mypy_cache` produces spurious `attr-defined` errors** on `contextvault.services`
-  submodule imports. `rm -rf .mypy_cache && uv run mypy` — a fresh run is authoritative.
-- **`f"...".encode("utf-8")` trips ruff UP012** (string-literal encode with a redundant arg) even
-  though `variable.encode("utf-8")` does not. Use `.encode()`.
-- **Conversation history is server-authoritative** — the `/query` request body no longer accepts a
-  `history` field.
-- **matplotlib/fpdf2 need an explicit Unicode font for Cyrillic** — DejaVu Sans is registered for
-  both in `report_render.py`; core fonts render □□□. Set the Agg backend before importing pyplot.
-- **`ENCRYPTION_KEY` required** before persisting/using any provider key or DB password
-  (`./dev.sh` auto-generates one into `.env`; tests get a per-run key from `conftest`).
-- **Frontend tooling:** vitest **3** with vite **6**; Node 25's experimental `localStorage` global
-  is shadowed by the in-memory `Storage` in `frontend/src/test/setup.ts`. New i18n keys go in **both**
+  `db_session` fixture clears with per-table `DELETE` (reversed `sorted_tables`), not `TRUNCATE …
+  CASCADE`, because TRUNCATE's ACCESS EXCLUSIVE lock blocked `report_execution`'s independent
+  connection to the same test DB.
+- **matplotlib/fpdf2 need an explicit Unicode font for Cyrillic** — DejaVu Sans is registered for both
+  in `report_render.py`; core fonts render □□□. Set the Agg backend before importing pyplot.
+- **Stale `.mypy_cache` produces spurious `attr-defined` errors** on `contextvault.services` submodule
+  imports. `rm -rf .mypy_cache && uv run mypy` is authoritative.
+- **`f"...".encode("utf-8")` trips ruff UP012** (redundant arg) though `variable.encode("utf-8")` does
+  not. Use `.encode()`.
+- **`ENCRYPTION_KEY` required** before persisting/using any provider key or DB password (`./dev.sh`
+  auto-generates one into `.env`; tests get a per-run key from `conftest`).
+- **Frontend tooling:** vitest **3** with vite **6**; Node 25's experimental `localStorage` global is
+  shadowed by the in-memory `Storage` in `frontend/src/test/setup.ts`. New i18n keys go in **both**
   `en.json` and `uk.json`.
-- DB-backed backend tests **skip** (not fail) when Postgres is unreachable; `docker compose up -d`
-  + `uv run alembic upgrade head`.
+- DB-backed backend tests **skip** (not fail) when Postgres is unreachable; `docker compose up -d` +
+  `uv run alembic upgrade head`.
 - **e2e is not run by CI** (no Playwright in `.github/workflows`); run manually against `./dev.sh`.
-  The `:8000` port can conflict — `export BACKEND_PORT=8001 VITE_PROXY_TARGET=http://localhost:8001 && ./dev.sh`.
+  Port `:8000` can conflict — `export BACKEND_PORT=8001 VITE_PROXY_TARGET=http://localhost:8001 && ./dev.sh`.
 
 ---
 
@@ -212,18 +202,18 @@ whole-branch review caught a Critical bug the per-task reviews missed. What ship
 
 - **Verify the FULL CI-parity gate before pushing.** Backend CI runs `ruff check src tests`,
   **`ruff format --check src tests`**, **`mypy`** (bare → includes `tests/`), `alembic upgrade head`,
-  `pytest`. `ruff check` ≠ `ruff format --check`.
-- **After committing, confirm `git status --porcelain` is empty** and re-run the gate on the
-  committed state before declaring green.
-- **Frontend DoD (from `frontend/`):** `npm run lint`, `npm run format:check`, `npm run typecheck`,
-  `npm test`, `npm run build`. New i18n keys in **both** locales.
-- **TDD:** RED → GREEN (minimal) → full gate. Update docs in the **same PR** — hard rule.
+  `pytest`. `ruff check` ≠ `ruff format --check`. Frontend CI runs `npm run lint`, `format:check`,
+  `typecheck`, `test`, `build`. A local Postgres on `:5432` matching the `.env` `DATABASE_URL` lets you
+  run the whole backend job locally (done this session — 498 passed).
+- **After committing, confirm `git status --porcelain` is empty** and re-run the gate on the committed
+  state before declaring green.
+- **TDD:** RED → GREEN (minimal) → full gate. Update docs in the **same PR** — hard rule (owner memory).
 - **Branch from fresh main:** `git fetch && git checkout main && git pull --ff-only` then
   `git checkout -b <slug>`. PRs are **squash-merged**, so after a merge local `main` may diverge —
-  `git reset --hard origin/main`.
-- **Merge policy (owner's standing directive):** open the PR, run the full gate + watch CI green,
-  then squash-merge. *(This session the owner asked to confirm before each merge — respect that
-  until told otherwise; the owner merged #116 themselves.)*
+  `git reset --hard origin/main` (or just `git pull --ff-only` once synced, as this session).
+- **Merge policy (owner's standing directive):** open the PR, run the full gate + watch CI green, then
+  the **owner** merges. Precedent (#117): owner confirmed the merge path (chose PR), CI watched green,
+  owner merged themselves. Respect confirm-before-merge until told otherwise.
 - Migrations (`migrations/versions/`) are NOT in ruff/mypy scope.
 - Commit trailer: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 
@@ -252,22 +242,27 @@ See `README.md` for quick start and `docs/architecture.md` for the subsystem/end
 
 ## History
 
-- **This session:** #116 database-backed reports (superpowers SDD, 14 tasks + final whole-branch
-  review that caught a Critical `SELECT *` allow-list bypass) — detailed under *Done recently*.
-- **#115** admin-note grounding (ingest `title\n\ncontent` so terse gap answers are groundable) +
-  auto-grant the repo-creating admin (`flush` before `grant_access` — UUID PK populates on flush).
-- **#114** persisted conversations (`conversations`/`conversation_turns`, server-authoritative
-  `/query` history, GET/DELETE conversation, QueryPage hydrate + Clear) + admin knowledge-gap
-  rejection (`gap_rejections`, reject-with-reason, rejected list). Includes the auth reload-logout
-  fix (wire `configureApi` synchronously in render, not in a `useEffect`).
-- **#112** Gemini API embeddings replace local torch/bge-m3 (1024-dim asymmetric; Gemini key now
-  required, 409 otherwise). Existing data needs `TRUNCATE chunks` + re-ingest.
-- **#111** Global provider keys (`ProviderSetting` + migration `d4f1a2b7c9e0`) + LLM-vision OCR
-  (`llm/ocr.py`, fixes Cyrillic images).
-- **#109** LLM config panel redesign. **#108** chat e2e. **#107** chat with memory (client-held,
-  since made server-authoritative by #114). **#106** multi-file upload. **#105** visible model
-  dropdown + drop dead `*_api_key` fallbacks.
-- **#100–#104** image(OCR)/web sources, HEIC support, dynamic model-list endpoint, EN/UK i18n,
-  copy-invite-link. Earlier: admin UI epic (#37–#40), frontend foundation (#34–#36), backend core
-  (auth, ingestion, retrieval, providers, citations, not_in_vault, invitations, grants, query
-  logging, knowledge gaps, analytics, Admin Notes). See `git log` and the board.
+- **(in review, PR pending)** custom (OpenAI-compatible) LLM provider — Phase 1: global `base_url` +
+  optional key on `provider_settings`, one `get_call_credentials` seam, `custom` branch at all five
+  dispatch sites, per-repo free-text model, EN+UK i18n, migration `c1d2e3f40506`. superpowers SDD (11
+  tasks + gate-fix + opus whole-branch review = merge-as-is). NOT air-gapped (Gemini still embeds →
+  Phase 2). Detailed under *Done recently*.
+- **#117** workspace-sidebar redesign (frontend-only): header → grouped sidebar, one route-scoped
+  `RepositoryContext` switcher, Sources+Database → tabbed Data page with redirects. superpowers SDD,
+  8 tasks + opus whole-branch review + fix pass. Detailed under *Done recently*.
+- **#116** database-backed reports: admin connects a read-only Postgres/MySQL DB to a repo (encrypted
+  creds, allow-listed tables/columns); NL request → repo's LLM writes SQL → **5-layer guardrail**
+  (`sqlglot` AST: single-SELECT, allow-list tables+columns, no `SELECT *`, no dangerous funcs, LIMIT)
+  → read-only + statement-timed execution → Cyrillic-safe `fpdf2` PDF (chart+stats) → per-user history
+  + nightly frozen-SQL schedules. superpowers SDD (14 tasks); final whole-branch review caught a
+  Critical `SELECT *` column-allow-list bypass (fixed). Deferred minors in `.superpowers/sdd/` (git-ignored).
+- **#115** admin-note grounding (ingest `title\n\ncontent`) + auto-grant the repo-creating admin
+  (`flush` before `grant_access`). **#114** persisted conversations + admin knowledge-gap rejection.
+- **#112** Gemini API embeddings replace local bge-m3 (1024-dim; Gemini key now required). Existing
+  data needs `TRUNCATE chunks` + re-ingest. **#111** global provider keys + LLM-vision OCR.
+- **#105–#109** LLM config panel, chat e2e, chat-with-memory (later server-authoritative via #114),
+  multi-file upload, visible model dropdown.
+- **#100–#104** image(OCR)/web sources, HEIC, dynamic model-list endpoint, EN/UK i18n, copy-invite-link.
+  Earlier: admin UI epic (#37–#40), frontend foundation (#34–#36), backend core (auth, ingestion,
+  retrieval, providers, citations, not_in_vault, invitations, grants, query logging, knowledge gaps,
+  analytics, Admin Notes). See `git log` and the board.
