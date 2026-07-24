@@ -1,13 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReportsPage, REPORT_POLL_MS } from "./ReportsPage";
-import type { Repository } from "../api/repositories";
 import type { Report, Schedule } from "../api/reports";
+import { renderWithRepo } from "../test/renderWithRepo";
 
-vi.mock("../api/repositories", () => ({
-  listRepositories: vi.fn(),
-}));
 vi.mock("../api/reports", async () => {
   const actual = await vi.importActual<typeof import("../api/reports")>("../api/reports");
   return {
@@ -23,7 +20,6 @@ vi.mock("../api/reports", async () => {
   };
 });
 
-import { listRepositories } from "../api/repositories";
 import {
   createReport,
   createSchedule,
@@ -33,8 +29,6 @@ import {
   listSchedules,
   patchSchedule,
 } from "../api/reports";
-
-const REPOS: Repository[] = [{ id: "r-1", name: "Handbook", description: null }];
 
 function report(overrides: Partial<Report> = {}): Report {
   return {
@@ -66,7 +60,6 @@ function schedule(overrides: Partial<Schedule> = {}): Schedule {
 
 describe("ReportsPage", () => {
   beforeEach(() => {
-    vi.mocked(listRepositories).mockResolvedValue(REPOS);
     vi.mocked(listSchedules).mockResolvedValue([]);
   });
 
@@ -74,18 +67,11 @@ describe("ReportsPage", () => {
     vi.clearAllMocks();
   });
 
-  it("shows the repository picker once repositories load", async () => {
-    vi.mocked(listReports).mockResolvedValue([]);
-    render(<ReportsPage />);
-    expect(await screen.findByLabelText("Repository")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Handbook" })).toBeInTheDocument();
-  });
-
   it("submits a prompt, calls createReport, and shows the new row as generating", async () => {
     vi.mocked(listReports).mockResolvedValue([]);
     vi.mocked(createReport).mockResolvedValue(report({ status: "pending" }));
-    render(<ReportsPage />);
-    await screen.findByLabelText("Repository");
+    renderWithRepo(<ReportsPage />);
+    await screen.findByLabelText("Prompt");
 
     await userEvent.type(screen.getByLabelText("Prompt"), "Monthly revenue by region");
     await userEvent.click(screen.getByRole("button", { name: "Generate report" }));
@@ -105,7 +91,7 @@ describe("ReportsPage", () => {
           report({ status: call === 1 ? "processing" : "done", has_pdf: true }),
         ]);
       });
-      render(<ReportsPage />);
+      renderWithRepo(<ReportsPage />);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
@@ -136,7 +122,7 @@ describe("ReportsPage", () => {
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
 
-    render(<ReportsPage />);
+    renderWithRepo(<ReportsPage />);
     await userEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
 
     expect(downloadReport).toHaveBeenCalledWith("r-1", "rep-1");
@@ -150,7 +136,7 @@ describe("ReportsPage", () => {
     vi.mocked(listReports).mockResolvedValue([
       report({ status: "failed", error: "SQL guardrail rejected the query" }),
     ]);
-    render(<ReportsPage />);
+    renderWithRepo(<ReportsPage />);
     expect(await screen.findByText("SQL guardrail rejected the query")).toBeInTheDocument();
   });
 
@@ -159,7 +145,7 @@ describe("ReportsPage", () => {
     vi.mocked(createSchedule).mockResolvedValue(schedule());
     vi.spyOn(window, "prompt").mockReturnValue("02:00");
 
-    render(<ReportsPage />);
+    renderWithRepo(<ReportsPage />);
     await userEvent.click(await screen.findByRole("button", { name: "Repeat nightly…" }));
 
     expect(window.prompt).toHaveBeenCalled();
@@ -170,7 +156,7 @@ describe("ReportsPage", () => {
     vi.mocked(listReports).mockResolvedValue([report({ status: "done", has_pdf: true })]);
     vi.spyOn(window, "prompt").mockReturnValue(null);
 
-    render(<ReportsPage />);
+    renderWithRepo(<ReportsPage />);
     await userEvent.click(await screen.findByRole("button", { name: "Repeat nightly…" }));
 
     expect(createSchedule).not.toHaveBeenCalled();
@@ -181,7 +167,7 @@ describe("ReportsPage", () => {
     vi.mocked(listSchedules).mockResolvedValue([schedule({ enabled: true })]);
     vi.mocked(patchSchedule).mockResolvedValue(schedule({ enabled: false }));
 
-    render(<ReportsPage />);
+    renderWithRepo(<ReportsPage />);
     const row = (await screen.findByText("Monthly revenue by region")).closest("li") as HTMLElement;
     await userEvent.click(within(row).getByRole("checkbox"));
 
@@ -193,7 +179,7 @@ describe("ReportsPage", () => {
     vi.mocked(listSchedules).mockResolvedValue([schedule()]);
     vi.mocked(deleteSchedule).mockResolvedValue(undefined);
 
-    render(<ReportsPage />);
+    renderWithRepo(<ReportsPage />);
     const row = (await screen.findByText("Monthly revenue by region")).closest("li") as HTMLElement;
     await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
 
