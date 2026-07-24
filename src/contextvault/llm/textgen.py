@@ -81,6 +81,8 @@ async def generate_text(
         if name == "openrouter":
             base = base_url or get_settings().openrouter_base_url
             return await _generate_openai_compatible(api_key, model, prompt, base)
+        if name == "custom":
+            return await _generate_openai_compatible(api_key, model, prompt, base_url)
         if name == "anthropic":
             return await _generate_anthropic(api_key, model, prompt)
     except TextGenError:

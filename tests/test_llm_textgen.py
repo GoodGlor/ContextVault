@@ -1,5 +1,8 @@
 """Dispatch + error-wrapping contract of the plain-text generation helper."""
 
+from types import SimpleNamespace
+from typing import Any
+
 import pytest
 
 import contextvault.llm.textgen as textgen
@@ -27,3 +30,24 @@ async def test_provider_failure_wrapped(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(textgen, "_generate_gemini", boom)
     with pytest.raises(TextGenError, match="quota"):
         await generate_text("gemini", "k", "m", prompt="hi")
+
+
+async def test_custom_passes_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder: dict[str, Any] = {}
+
+    class _Completions:
+        async def create(self, **kwargs: Any) -> Any:
+            recorder.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="generated"))]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: Any) -> None:
+            recorder["base_url"] = kwargs.get("base_url")
+            self.chat = SimpleNamespace(completions=_Completions())
+
+    monkeypatch.setattr(textgen, "AsyncOpenAI", FakeOpenAI)
+    result = await generate_text("custom", "sk-noauth", "llama3.1:8b", prompt="hi", base_url="http://x/v1")
+    assert result == "generated"
+    assert recorder["base_url"] == "http://x/v1"

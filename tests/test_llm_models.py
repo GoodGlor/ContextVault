@@ -91,6 +91,36 @@ async def test_openrouter_returns_all_namespaced_ids(monkeypatch: pytest.MonkeyP
     assert models == ["anthropic/claude-3.5-sonnet", "openai/gpt-4o"]
 
 
+async def test_custom_lists_all_models_via_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    class _Model:
+        def __init__(self, mid):
+            self.id = mid
+
+    class _FakeModels:
+        def list(self):
+            return self
+
+        def __aiter__(self):
+            async def gen():
+                for m in (_Model("llama3.1:8b"), _Model("nomic-embed-text")):
+                    yield m
+
+            return gen()
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.models = _FakeModels()
+
+    monkeypatch.setattr("contextvault.llm.models.AsyncOpenAI", _FakeClient)
+    result = await list_models("custom", "sk-noauth", base_url="http://localhost:11434/v1")
+    # No chat-family filter for custom: every id is returned (local names are arbitrary).
+    assert result == ["llama3.1:8b", "nomic-embed-text"]
+    assert captured["base_url"] == "http://localhost:11434/v1"
+
+
 async def test_gemini_keeps_only_generate_content(monkeypatch: pytest.MonkeyPatch) -> None:
     items = [
         _Model("models/gemini-2.5-flash", supported_actions=["generateContent", "countTokens"]),

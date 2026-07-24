@@ -72,6 +72,14 @@ async def test_openrouter_passes_base_url(monkeypatch: pytest.MonkeyPatch) -> No
     assert recorder["base_url"] == "https://router/api"
 
 
+async def test_custom_passes_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _Recorder()
+    monkeypatch.setattr("contextvault.llm.ocr.AsyncOpenAI", _fake_openai(recorder, "text"))
+
+    await transcribe_image("custom", "sk-noauth", "llava", image=_png(), base_url="http://x/v1")
+    assert recorder["base_url"] == "http://x/v1"
+
+
 async def test_anthropic_transcribes(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder = _Recorder()
 

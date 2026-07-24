@@ -55,9 +55,9 @@ async def _list_openai(api_key: str) -> list[str]:
     return sorted({m.id async for m in client.models.list() if _is_openai_chat_id(m.id)})
 
 
-async def _list_openrouter(api_key: str, base_url: str | None) -> list[str]:
-    # OpenRouter speaks the OpenAI wire format; its ids are already namespaced chat
-    # models (``openai/gpt-4o``), so return them all rather than applying the OpenAI filter.
+async def _list_openai_compatible(api_key: str, base_url: str | None) -> list[str]:
+    # OpenAI-compatible endpoints (OpenRouter, self-hosted) already expose chat model
+    # ids directly; return them all rather than applying the OpenAI-family filter.
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     return sorted({m.id async for m in client.models.list()})
 
@@ -77,7 +77,7 @@ async def _list_gemini(api_key: str) -> list[str]:
 async def list_models(provider: str, api_key: str, *, base_url: str | None = None) -> list[str]:
     """Return the chat models ``provider`` currently offers for ``api_key``.
 
-    ``base_url`` is used only for OpenRouter (its OpenAI-compatible endpoint). Raises
+    ``base_url`` is used for OpenRouter and custom OpenAI-compatible endpoints. Raises
     :class:`ModelListError` for an unknown provider or any provider-side failure.
     """
     name = provider.lower()
@@ -87,9 +87,11 @@ async def list_models(provider: str, api_key: str, *, base_url: str | None = Non
         if name == "openai":
             return await _list_openai(api_key)
         if name == "openrouter":
-            return await _list_openrouter(api_key, base_url)
+            return await _list_openai_compatible(api_key, base_url)
         if name == "gemini":
             return await _list_gemini(api_key)
+        if name == "custom":
+            return await _list_openai_compatible(api_key, base_url)
     except ModelListError:
         raise
     except Exception as exc:  # noqa: BLE001 — any SDK failure becomes a clean 400
