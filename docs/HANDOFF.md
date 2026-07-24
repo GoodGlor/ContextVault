@@ -1,6 +1,6 @@
 # ContextVault — Session Handoff
 
-- **Last updated:** 2026-07-24 20:00 EEST (custom OpenAI-compatible LLM provider — merged #118)
+- **Last updated:** 2026-07-24 23:21 EEST (e2e suite repaired — workspace redesign + custom provider — branch pushed, PR pending)
 - **Updated by:** Claude (Opus 4.8) with GoodGlor
 - **Board (source of truth for *what to do*):** GitHub Projects "ContextVault" (`GoodGlor`, project #1). Cards = issues in `GoodGlor/ContextVault`. *(Recent feature work has shipped outside the board via superpowers SDD.)*
 
@@ -9,8 +9,18 @@
 ## TL;DR
 
 ContextVault is a full-stack, admin-curated RAG assistant (FastAPI + Postgres/pgvector
-backend, React/Vite SPA), feature-complete. **Nothing is in flight — `main` is clean, pushed,
-and there are no open PRs.**
+backend, React/Vite SPA), feature-complete. **In flight: branch `test/e2e-repair-custom-provider`
+(HEAD `7cfd396`) — the Playwright e2e suite, repaired and green; PR pending (owner merges).**
+
+**Repaired this session — the e2e (Playwright) suite was fully red and is now green (5/5).**
+Three specs had silently broken on the **#117** workspace-sidebar redesign (e2e was never updated
+with it) and one on the **#118** custom-provider payload change — CI has no e2e job, so nothing
+caught it. Fixed all four (new sidebar nav, unified **Data** page, sidebar repo switcher, the
+`{api_key, base_url}` payload) and added **`custom-provider.spec.ts`** (keyless base-URL save →
+`{api_key:null, base_url}` → Verified; repo takes a free-typed model). The specs are now
+**state-independent** — green against both a fresh DB and the real dev DB (Gemini verified,
+existing repos) — so a normal `./dev.sh` stack passes them. Frontend lint/format/typecheck clean;
+no `src/` changes (tests only). Details under *Done recently*.
 
 **Merged this session — custom (OpenAI-compatible) LLM provider, Phase 1 — #118 (squash `52196b1`).**
 A new **`custom`** provider ("Custom, OpenAI-compatible") lets a deployment point chat / report /
@@ -51,9 +61,9 @@ pre-Gemini DB, and set a verified Gemini provider key or every ingest/query 409s
 
 | | Value |
 |---|---|
-| Current branch | `main` (clean, in sync with `origin/main`) |
+| Current branch | `test/e2e-repair-custom-provider` (HEAD `7cfd396`, off `main` `52196b1`) — e2e repair, **PR pending** |
 | `main` HEAD | `52196b1` (#118, custom OpenAI-compatible provider) |
-| In flight | **nothing** — no open PRs; `feat/custom-openai-compatible-provider` merged + local branch deleted (remote branch still on GitHub — safe to delete) |
+| In flight | **e2e-suite repair** on `test/e2e-repair-custom-provider` — 5/5 green, gate clean, tests-only diff (5 files). Push + PR; owner merges. `feat/custom-openai-compatible-provider` (merged) remote branch still on GitHub — safe to delete. |
 | Parked | `wip/passage-toggle` (off an older `main`) — a prior session's passage view/hide toggle, **never reviewed/merged**. Rebase, review, PR-or-drop. |
 | CI | green on #118 (merged); local CI-parity gate green pre-merge (backend 498✓, frontend 109✓) |
 | Local infra | `contextvault-db` (pgvector pg16) up + migrated (head `c1d2e3f40506`) |
@@ -99,9 +109,39 @@ migration. What shipped (commit-by-commit, `3266b19`..`0efa41c`):
   (a half-threaded `base_url` leaving a site on the SDK default endpoint) verified absent at all sites.
 - **Open follow-ups (non-blocking, accepted):** (a) **SSRF hardening** for the admin-supplied `base_url`
   (fetched server-side at verify + every call) — deferred, consistent with `web_source.py` posture; (b)
-  provider **e2e** selector updates (CI skips e2e); (c) cosmetic minors logged in `.superpowers/sdd/progress.md`
+  provider **e2e** selector updates — ✅ **done** on `test/e2e-repair-custom-provider` (PR pending); (c) cosmetic minors logged in `.superpowers/sdd/progress.md`
   (reports error message wording; `noModels` also shows for custom empty list; "Remove key" on custom
   removes the whole endpoint). Phase 2 (local embeddings) / Phase 3 (Ollama-native UX) per spec §11.
+
+### E2E (Playwright) suite repair — `test/e2e-repair-custom-provider` (`7cfd396`, PR pending; tests-only, no `src/` changes)
+
+The whole e2e suite was red and unnoticed (CI runs no Playwright). Root causes split two ways:
+the **#117** workspace-sidebar redesign shipped without updating e2e (3 specs broke on nav/heading
+selectors — `.app-brand`→`.sidebar-brand`, the "Sources" link → unified **Data** page, and the
+repo picker moving into the sidebar switcher), and **#118** changed the provider-key payload
+(1 spec). Fixed against the current UI and, importantly, made **state-independent** so they don't
+assume an empty DB:
+
+- **`providers.spec`** — `setProviderKey` now always sends `base_url` (null for a cloud provider);
+  assert the new `{ api_key, base_url }` payload shape.
+- **`admin.spec`** — assert the state-independent invariant (a repo's config **never** shows an
+  API-key field); dropped the "no provider verified yet" empty-state assertion (it needs a
+  zero-verified DB and is already covered by `AdminRepositoriesPage` component tests).
+- **`query.spec`** — brand-link click → **"Ask"** nav + `page.reload()`, because the sidebar repo
+  switcher loads its list **once at app mount**, so a grant made mid-session only surfaces after a
+  reload. (Same reason `sources.spec` reloads after creating a repo.)
+- **`sources.spec`** — "Sources" link/heading → **"Data"**; reload for switcher freshness;
+  `getByLabel("Documents", { exact:true })` so the file input doesn't also match the
+  "Documents & web" tabpanel label under Playwright's default substring matching.
+- **`custom-provider.spec` (new)** — browser-boundary-stubbed like `providers.spec`: the custom row
+  shows a Base URL field + optional key + the Gemini-embeddings note; a keyless save sends
+  `{ api_key: null, base_url }` and flips to Verified; the repo config takes a **free-typed** model
+  id (not a `<select>`) and saves `{ provider, model }`.
+
+Verified **5/5 green** three runs against a fresh ephemeral DB **and** once against the real dev DB
+(Gemini seeded/verified, existing repos). How to run e2e is unchanged (`./dev.sh` up, then
+`cd frontend && npm run test:e2e`) — note it needs a **verified Gemini key** in the stack, since
+adding any source is gated on it (`deps.get_embedder`).
 
 *Workspace-sidebar redesign (#117), database-backed reports (#116) and older work under History.*
 
@@ -111,7 +151,8 @@ migration. What shipped (commit-by-commit, `3266b19`..`0efa41c`):
 
 1. **Custom-provider follow-ups (#118, each a candidate card, all non-blocking):** (a) **SSRF hardening**
    for the admin-supplied `base_url` (fetched server-side at verify + every call) — deferred, shares the
-   `web_source.py` posture below; (b) provider **e2e** selector updates (CI skips e2e); (c) cosmetic
+   `web_source.py` posture below; (b) ~~provider e2e selector updates~~ — ✅ done (`test/e2e-repair-custom-provider`,
+   PR pending); (c) cosmetic
    polish in `.superpowers/sdd/progress.md` — tighten the reports "no verified key" message when the real
    gap is a missing model; consider suppressing `noModels` for custom; "Remove key" on the custom row
    removes the whole endpoint (label imprecise). **Phase 2** (local embeddings + per-dimension vector
@@ -129,8 +170,11 @@ migration. What shipped (commit-by-commit, `3266b19`..`0efa41c`):
    - **Revoked-grant users can still download their own past reports** (`get`/`download`/`delete`
      gate on owner-or-admin, not active grant — unlike `create`/`list`).
    - **No per-user row-level restrictions** (repo-level grants only) and **no DOCX/PPTX export**.
-4. **Redesign follow-ups (#117)** — e2e selector updates for the sidebar nav (before next e2e run) and
-   the two minor a11y-polish items. Small; do when convenient.
+4. **Redesign follow-ups (#117)** — e2e selector updates for the sidebar nav are ✅ done
+   (`test/e2e-repair-custom-provider`, PR pending); the two minor a11y-polish items remain. Small; do
+   when convenient. **Bigger win worth a card: add a Playwright e2e job to CI** so this whole class of
+   silent breakage (a UI change that never updates e2e) gets caught — the suite is now state-independent,
+   so it just needs a stack + a Gemini key in the workflow.
 5. **Re-tune `retrieval_min_score` for Gemini embeddings (worth a card).** With Gemini even
    loosely-related chunks score ~0.7, so the current `0.3` threshold (tuned for bge-m3) barely
    filters. Flagged since #112.
@@ -195,6 +239,11 @@ migration. What shipped (commit-by-commit, `3266b19`..`0efa41c`):
   `uv run alembic upgrade head`.
 - **e2e is not run by CI** (no Playwright in `.github/workflows`); run manually against `./dev.sh`.
   Port `:8000` can conflict — `export BACKEND_PORT=8001 VITE_PROXY_TARGET=http://localhost:8001 && ./dev.sh`.
+  The suite is now **state-independent** (repaired on `test/e2e-repair-custom-provider`): unique names +
+  a reload after any create/grant (the sidebar repo switcher loads its list once at app mount), and no
+  assumption of an empty DB. It **does** require a **verified Gemini key** in the stack — adding any
+  source is gated on `deps.get_embedder`. Because it's not in CI, a UI change can silently break it
+  again; updating e2e alongside frontend changes is on you until a CI e2e job lands (Next up #4).
 
 ---
 
