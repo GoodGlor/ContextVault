@@ -39,6 +39,9 @@ async function createRepository(page: Page, name: string): Promise<void> {
   await page.getByLabel("Description").fill("created by the sources e2e test");
   await page.getByRole("button", { name: "Create repository" }).click();
   await expect(page.locator("li.repo-item", { hasText: name })).toBeVisible();
+  // The sidebar repo switcher loads its list once at app mount; reload so the just-
+  // created repo appears there (the Data page reads the repo from that switcher).
+  await page.reload();
 }
 
 test("admin adds an image (OCR) source and a web-link source", async ({ page }) => {
@@ -48,9 +51,10 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
   const repoName = `E2E Sources ${Date.now()}`;
   await createRepository(page, repoName);
 
-  // Go to Sources and select the repository we just made.
-  await page.getByRole("link", { name: "Sources" }).click();
-  await expect(page.getByRole("heading", { name: "Sources" })).toBeVisible();
+  // Go to the Data page (which absorbed the former Sources page — its Documents &
+  // web tab is the default) and select the repository we just made in the switcher.
+  await page.getByRole("link", { name: "Data" }).click();
+  await expect(page.getByRole("heading", { name: "Data" })).toBeVisible();
   await page.getByLabel("Repository").selectOption({ label: repoName });
 
   // The OCR helper note and the web-link form are present on the page.
@@ -70,7 +74,8 @@ test("admin adds an image (OCR) source and a web-link source", async ({ page }) 
   // --- Image source on an unconfigured repo: images are read by the repo's own
   // vision model, so with no model configured the upload is blocked with a clear,
   // actionable message (the real 409 gate) and no source row is created. ---
-  await page.getByLabel("Documents").setInputFiles({
+  // `exact` so this doesn't also match the "Documents & web" tabpanel's label.
+  await page.getByLabel("Documents", { exact: true }).setInputFiles({
     name: "blank.png",
     mimeType: "image/png",
     buffer: BLANK_PNG,

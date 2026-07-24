@@ -41,11 +41,12 @@ test("admin signs in, navigates the admin nav, and creates a repository", async 
   await expect(row).toBeVisible();
   await expect(row.getByText("Not configured")).toBeVisible();
 
-  // Global provider keys: with no provider key set up yet, opening a repo's config
-  // must NOT ask for a key (keys live in the Providers tab). Instead it tells the
-  // admin to set one up first. This proves the real /admin/providers gate end-to-end.
+  // Global provider keys: opening a repo's config must NEVER ask for an API key —
+  // keys live in the Providers tab, so the config only ever offers a provider + model.
+  // (The "no provider verified yet" empty state is covered by the component tests,
+  // which can pin the global provider state; e2e shares one stack, so it asserts only
+  // the state-independent invariant here.)
   await row.getByRole("button", { name: "Configure" }).click();
-  await expect(row.getByText(/add an api key in the providers tab/i)).toBeVisible();
   await expect(row.getByLabel("API key")).toHaveCount(0);
   // Close the panel again so it doesn't interfere with later assertions.
   await row.getByRole("button", { name: "Configure" }).click();

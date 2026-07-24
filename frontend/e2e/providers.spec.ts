@@ -105,10 +105,11 @@ test("set a provider key, then pick a repo's model without entering a key", asyn
   await openaiRow.getByRole("button", { name: "Save key" }).click();
   await expect(openaiRow.locator("span.badge", { hasText: "Verified" })).toBeVisible();
 
-  // The save carried just the key, to the OpenAI provider.
+  // The save carried the key, to the OpenAI provider. Since the custom-provider work,
+  // the payload always includes base_url (null for a cloud provider like OpenAI).
   expect(providerPuts).toHaveLength(1);
   expect(providerPuts[0].url).toContain("/admin/providers/openai");
-  expect(providerPuts[0].body).toEqual({ api_key: "sk-test-key-123" });
+  expect(providerPuts[0].body).toEqual({ api_key: "sk-test-key-123", base_url: null });
 
   // --- Repositories tab: create a repo and pick a model from OpenAI. ---
   const repoName = `Config E2E ${Date.now()}`;

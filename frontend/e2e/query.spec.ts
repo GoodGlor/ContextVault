@@ -116,8 +116,11 @@ test("query page is a chat, and the server-side conversation survives a reload",
     });
   });
 
-  // Back to the chat (SPA nav via the brand link preserves the session).
-  await page.locator(".app-brand").click();
+  // Back to the chat. The repository was just granted mid-session, but the sidebar
+  // repo switcher loads its list once at app mount — so a full reload is needed for
+  // the new grant to surface in it. Route intercepts set up above survive the reload.
+  await page.getByRole("link", { name: "Ask" }).click();
+  await page.reload();
   await expect(page.getByRole("heading", { name: "Ask a repository" })).toBeVisible();
   await page.getByLabel("Repository").selectOption({ label: repoName });
 
