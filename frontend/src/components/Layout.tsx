@@ -26,6 +26,7 @@ export function Layout(): ReactNode {
             <NavLink to="/admin/repositories">{t("nav.repositories")}</NavLink>
             <NavLink to="/admin/providers">{t("nav.providers")}</NavLink>
             <NavLink to="/admin/sources">{t("nav.sources")}</NavLink>
+            <NavLink to="/admin/database">{t("nav.database")}</NavLink>
             <NavLink to="/admin/users">{t("nav.users")}</NavLink>
             <NavLink to="/admin/insights">{t("nav.insights")}</NavLink>
           </nav>

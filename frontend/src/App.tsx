@@ -9,6 +9,7 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
 import { AdminProvidersPage } from "./pages/AdminProvidersPage";
 import { AdminSourcesPage } from "./pages/AdminSourcesPage";
+import { AdminDatabasePage } from "./pages/AdminDatabasePage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminInsightsPage } from "./pages/AdminInsightsPage";
 
@@ -55,6 +56,14 @@ export function App(): ReactNode {
           element={
             <RequireAuth requireAdmin>
               <AdminSourcesPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/database"
+          element={
+            <RequireAuth requireAdmin>
+              <AdminDatabasePage />
             </RequireAuth>
           }
         />
