@@ -97,9 +97,7 @@ async def set_provider(
                 detail="A base URL is required for a custom OpenAI-compatible endpoint.",
             )
     elif not key:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="API key is required."
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API key is required.")
     try:
         setting = await provider_service.set_provider_key(
             session, provider, key, now=datetime.now(UTC), base_url=base_url

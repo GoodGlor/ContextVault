@@ -58,9 +58,7 @@ async def test_call_credentials_uses_placeholder_when_keyless(db_session: AsyncS
         )
     )
     await db_session.commit()
-    key, base_url = await provider_service.get_call_credentials(
-        db_session, LLMProviderName.CUSTOM
-    )
+    key, base_url = await provider_service.get_call_credentials(db_session, LLMProviderName.CUSTOM)
     assert key == provider_service.NOAUTH_PLACEHOLDER
     assert base_url == "http://gpu-box:8000/v1"
 
@@ -68,7 +66,9 @@ async def test_call_credentials_uses_placeholder_when_keyless(db_session: AsyncS
 async def test_set_custom_stores_base_url_and_optional_key(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def ok_list_models(provider: str, api_key: str, *, base_url: str | None = None):
+    async def ok_list_models(
+        provider: str, api_key: str, *, base_url: str | None = None
+    ) -> list[str]:
         return ["llama3.1:8b"]
 
     monkeypatch.setattr("contextvault.services.providers.list_models", ok_list_models)

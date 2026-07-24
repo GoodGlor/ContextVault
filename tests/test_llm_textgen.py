@@ -48,6 +48,8 @@ async def test_custom_passes_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
             self.chat = SimpleNamespace(completions=_Completions())
 
     monkeypatch.setattr(textgen, "AsyncOpenAI", FakeOpenAI)
-    result = await generate_text("custom", "sk-noauth", "llama3.1:8b", prompt="hi", base_url="http://x/v1")
+    result = await generate_text(
+        "custom", "sk-noauth", "llama3.1:8b", prompt="hi", base_url="http://x/v1"
+    )
     assert result == "generated"
     assert recorder["base_url"] == "http://x/v1"

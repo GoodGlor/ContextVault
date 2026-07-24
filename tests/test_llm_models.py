@@ -8,6 +8,8 @@ a provider failure surfaces as ``ModelListError``.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import pytest
 
 from contextvault.llm.models import ModelListError, list_models
@@ -92,25 +94,25 @@ async def test_openrouter_returns_all_namespaced_ids(monkeypatch: pytest.MonkeyP
 
 
 async def test_custom_lists_all_models_via_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = {}
+    captured: dict[str, object] = {}
 
     class _Model:
-        def __init__(self, mid):
+        def __init__(self, mid: str) -> None:
             self.id = mid
 
     class _FakeModels:
-        def list(self):
+        def list(self) -> _FakeModels:
             return self
 
-        def __aiter__(self):
-            async def gen():
+        def __aiter__(self) -> AsyncIterator[_Model]:
+            async def gen() -> AsyncIterator[_Model]:
                 for m in (_Model("llama3.1:8b"), _Model("nomic-embed-text")):
                     yield m
 
             return gen()
 
     class _FakeClient:
-        def __init__(self, **kwargs):
+        def __init__(self, **kwargs: object) -> None:
             captured.update(kwargs)
             self.models = _FakeModels()
 

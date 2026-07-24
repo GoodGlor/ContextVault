@@ -212,9 +212,7 @@ async def test_custom_requires_base_url(
 ) -> None:
     _stub_verify(monkeypatch, ok=True)
     token = await _token(client, db_session, Role.ADMIN)
-    resp = await client.put(
-        "/admin/providers/custom", json={"api_key": None}, headers=_auth(token)
-    )
+    resp = await client.put("/admin/providers/custom", json={"api_key": None}, headers=_auth(token))
     assert resp.status_code == 400
     assert "base url" in resp.json()["detail"].lower()
 
