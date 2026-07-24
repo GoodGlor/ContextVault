@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AdminSourcesPage, SOURCE_POLL_MS } from "./AdminSourcesPage";
-import type { AdminRepository } from "../api/repositories";
-import type { Source } from "../api/sources";
+import { SourcesPanel, SOURCE_POLL_MS } from "./SourcesPanel";
+import { renderWithRepo, repoValue } from "../../test/renderWithRepo";
+import type { Source } from "../../api/sources";
 
 function json(body: unknown, status = 200): Response {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -11,10 +11,6 @@ function json(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-
-const REPOS: AdminRepository[] = [
-  { id: "r-1", name: "Handbook", description: null, configured: true },
-];
 
 function source(overrides: Partial<Source> = {}): Source {
   return {
@@ -31,7 +27,7 @@ function source(overrides: Partial<Source> = {}): Source {
   };
 }
 
-describe("AdminSourcesPage", () => {
+describe("SourcesPanel", () => {
   const fetchMock = vi.fn();
   beforeEach(() => vi.stubGlobal("fetch", fetchMock));
   afterEach(() => {
@@ -41,16 +37,13 @@ describe("AdminSourcesPage", () => {
 
   /** `sources` may be a static array or a function of the (0-based) list-call index. */
   function mock(opts: {
-    repos?: AdminRepository[];
     sources?: Source[] | ((call: number) => Source[]);
     uploaded?: Source;
     webAdded?: Source;
   }) {
-    const repos = opts.repos ?? REPOS;
     let listCall = 0;
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
-      if (url.endsWith("/admin/repositories")) return Promise.resolve(json(repos));
       if (/\/repositories\/[^/]+\/web-sources$/.test(url) && method === "POST") {
         return Promise.resolve(
           json(opts.webAdded ?? source({ kind: "web", status: "pending" }), 201),
@@ -79,7 +72,7 @@ describe("AdminSourcesPage", () => {
 
   it("lists the selected repository's sources with their status", async () => {
     mock({ sources: [source({ id: "s-1", title: "policy.pdf", status: "done" })] });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     expect(await screen.findByText("policy.pdf")).toBeInTheDocument();
     expect(screen.getByText("Completed")).toBeInTheDocument();
   });
@@ -89,7 +82,7 @@ describe("AdminSourcesPage", () => {
       sources: [],
       uploaded: source({ id: "s-9", title: "handbook.pdf", status: "pending" }),
     });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     await screen.findByRole("button", { name: "Upload" });
 
     const file = new File(["hello"], "handbook.pdf", { type: "application/pdf" });
@@ -108,7 +101,7 @@ describe("AdminSourcesPage", () => {
 
   it("uploads several files at once, one request each, and lists them all", async () => {
     mock({ sources: [] });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     await screen.findByRole("button", { name: "Upload" });
 
     const files = [
@@ -135,7 +128,7 @@ describe("AdminSourcesPage", () => {
 
   it("deletes a source", async () => {
     mock({ sources: [source({ id: "s-1", title: "policy.pdf" })] });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     const row = (await screen.findByText("policy.pdf")).closest("li") as HTMLElement;
 
     await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
@@ -155,8 +148,8 @@ describe("AdminSourcesPage", () => {
           source({ id: "s-1", title: "big.pdf", status: call === 0 ? "processing" : "done" }),
         ],
       });
-      render(<AdminSourcesPage />);
-      // Flush the mount (load repos → auto-select → list sources).
+      renderWithRepo(<SourcesPanel />);
+      // Flush the mount (list sources).
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
@@ -176,14 +169,14 @@ describe("AdminSourcesPage", () => {
     mock({
       sources: [source({ id: "s-1", title: "broken.pdf", status: "failed", ingest_error: "boom" })],
     });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     expect(await screen.findByText("Failed")).toBeInTheDocument();
     expect(screen.getByText(/boom/)).toBeInTheDocument();
   });
 
   it("renders the OCR helper note", async () => {
     mock({ sources: [] });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     expect(
       await screen.findByText(/only text visible in the image is captured/i),
     ).toBeInTheDocument();
@@ -191,7 +184,7 @@ describe("AdminSourcesPage", () => {
 
   it("accepts HEIC/HEIF images in the file picker", async () => {
     mock({ sources: [] });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     const input = (await screen.findByLabelText(/document/i)) as HTMLInputElement;
     expect(input.accept).toContain(".heic");
     expect(input.accept).toContain(".heif");
@@ -209,7 +202,7 @@ describe("AdminSourcesPage", () => {
         status: "pending",
       }),
     });
-    render(<AdminSourcesPage />);
+    renderWithRepo(<SourcesPanel />);
     await screen.findByRole("button", { name: "Add link" });
 
     await userEvent.type(screen.getByLabelText("Web link"), "https://x.test");
@@ -224,5 +217,12 @@ describe("AdminSourcesPage", () => {
     // The newly added web source appears, linked to its URL.
     const link = await screen.findByRole("link", { name: "https://x.test" });
     expect(link).toHaveAttribute("href", "https://x.test");
+  });
+
+  it("shows the no-repos message when there is no current repository", async () => {
+    renderWithRepo(<SourcesPanel />, repoValue({ repos: [], currentRepoId: "" }));
+    expect(
+      await screen.findByText("No repositories yet. Create one under Repositories first."),
+    ).toBeInTheDocument();
   });
 });

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AdminDatabasePage } from "./AdminDatabasePage";
-import type { AdminRepository } from "../api/repositories";
-import type { DatabaseConnection, ExposedTable } from "../api/database";
+import { DatabasePanel } from "./DatabasePanel";
+import { renderWithRepo, repoValue } from "../../test/renderWithRepo";
+import type { DatabaseConnection, ExposedTable } from "../../api/database";
 
 function json(body: unknown, status = 200): Response {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -11,10 +11,6 @@ function json(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-
-const REPOS: AdminRepository[] = [
-  { id: "r-1", name: "Handbook", description: null, configured: true },
-];
 
 function connection(overrides: Partial<DatabaseConnection> = {}): DatabaseConnection {
   return {
@@ -45,7 +41,7 @@ const SCHEMA: ExposedTable[] = [
   },
 ];
 
-describe("AdminDatabasePage", () => {
+describe("DatabasePanel", () => {
   const fetchMock = vi.fn();
   beforeEach(() => vi.stubGlobal("fetch", fetchMock));
   afterEach(() => {
@@ -55,17 +51,14 @@ describe("AdminDatabasePage", () => {
 
   /** `conn` is `null` for "no connection yet" (GET → 404). */
   function mock(opts: {
-    repos?: AdminRepository[];
     conn?: DatabaseConnection | null;
     putResult?: DatabaseConnection;
     introspectSchema?: ExposedTable[];
     patchResult?: DatabaseConnection;
   }) {
-    const repos = opts.repos ?? REPOS;
     const conn = opts.conn === undefined ? null : opts.conn;
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
-      if (url.endsWith("/admin/repositories")) return Promise.resolve(json(repos));
       if (/\/repositories\/[^/]+\/database\/introspect$/.test(url) && method === "POST") {
         return Promise.resolve(json({ schema: opts.introspectSchema ?? [] }));
       }
@@ -91,7 +84,7 @@ describe("AdminDatabasePage", () => {
 
   it("renders the connection setup form when no connection exists", async () => {
     mock({ conn: null });
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     expect(await screen.findByLabelText("Host")).toBeInTheDocument();
     expect(screen.getByLabelText("Port")).toBeInTheDocument();
     expect(screen.getByLabelText("Database")).toBeInTheDocument();
@@ -102,7 +95,7 @@ describe("AdminDatabasePage", () => {
 
   it("submits the setup form and calls putDatabase with typed values", async () => {
     mock({ conn: null, putResult: connection() });
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     await screen.findByLabelText("Host");
 
     await userEvent.selectOptions(screen.getByLabelText("Database type"), "postgres");
@@ -136,7 +129,7 @@ describe("AdminDatabasePage", () => {
 
   it("shows a masked connected summary — never the password", async () => {
     mock({ conn: connection() });
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     expect(await screen.findByText(/db\.internal/)).toBeInTheDocument();
     expect(screen.getByText(/reporting/)).toBeInTheDocument();
     expect(screen.getByText(/readonly/)).toBeInTheDocument();
@@ -147,7 +140,7 @@ describe("AdminDatabasePage", () => {
 
   it("renders tables with description inputs and checkboxes after introspecting", async () => {
     mock({ conn: connection(), introspectSchema: SCHEMA });
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     await userEvent.click(await screen.findByRole("button", { name: "Introspect" }));
 
     expect(await screen.findByText("orders")).toBeInTheDocument();
@@ -163,7 +156,7 @@ describe("AdminDatabasePage", () => {
 
   it("saves the allow-list with only checked tables/columns", async () => {
     mock({ conn: connection(), introspectSchema: SCHEMA });
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     await userEvent.click(await screen.findByRole("button", { name: "Introspect" }));
     await screen.findByText("orders");
 
@@ -198,7 +191,7 @@ describe("AdminDatabasePage", () => {
   it("deletes the connection after confirming", async () => {
     mock({ conn: connection() });
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     await userEvent.click(await screen.findByRole("button", { name: "Delete connection" }));
 
     expect(window.confirm).toHaveBeenCalled();
@@ -211,10 +204,17 @@ describe("AdminDatabasePage", () => {
   it("does not delete when the confirmation is declined", async () => {
     mock({ conn: connection() });
     vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<AdminDatabasePage />);
+    renderWithRepo(<DatabasePanel />);
     await userEvent.click(await screen.findByRole("button", { name: "Delete connection" }));
 
     const del = fetchMock.mock.calls.find((c) => (c[1]?.method ?? "GET") === "DELETE");
     expect(del).toBeUndefined();
+  });
+
+  it("shows the no-repos message when there is no current repository", async () => {
+    renderWithRepo(<DatabasePanel />, repoValue({ repos: [], currentRepoId: "" }));
+    expect(
+      await screen.findByText("No repositories yet. Create one under Repositories first."),
+    ).toBeInTheDocument();
   });
 });

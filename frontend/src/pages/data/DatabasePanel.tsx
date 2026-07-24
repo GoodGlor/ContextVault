@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../api/client";
-import { listAllRepositories, type AdminRepository } from "../api/repositories";
+import { ApiError } from "../../api/client";
+import { useCurrentRepository } from "../../repository/RepositoryContext";
 import {
   deleteDatabase,
   getDatabase,
@@ -12,7 +12,7 @@ import {
   type DatabaseConnection,
   type DatabaseType,
   type ExposedTable,
-} from "../api/database";
+} from "../../api/database";
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.detail : fallback;
@@ -69,13 +69,11 @@ function toExposedSchema(tables: EditableTable[]): ExposedTable[] {
     }));
 }
 
-/** Admin surface for a repository's reporting-database connection: connect,
+/** Reporting-database connection for the current repository: connect,
  *  introspect its live schema, curate an allow-list, or disconnect. */
-export function AdminDatabasePage(): ReactNode {
+export function DatabasePanel(): ReactNode {
   const { t } = useTranslation();
-  const [repos, setRepos] = useState<AdminRepository[] | null>(null);
-  const [reposError, setReposError] = useState<string | null>(null);
-  const [selected, setSelected] = useState("");
+  const { currentRepoId } = useCurrentRepository();
 
   // `null` = no connection yet (show the setup form); `undefined` = still loading.
   const [connection, setConnection] = useState<DatabaseConnection | null | undefined>(undefined);
@@ -101,33 +99,15 @@ export function AdminDatabasePage(): ReactNode {
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Load the admin's full repository list and default to the first one.
-  useEffect(() => {
-    let cancelled = false;
-    listAllRepositories()
-      .then((rs) => {
-        if (cancelled) return;
-        setRepos(rs);
-        if (rs.length > 0) setSelected(rs[0].id);
-      })
-      .catch(
-        (err: unknown) =>
-          !cancelled && setReposError(errorMessage(err, t("adminDatabase.errorLoadRepos"))),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
   // (Re)load the selected repository's connection.
   useEffect(() => {
-    if (selected === "") return;
+    if (currentRepoId === "") return;
     let cancelled = false;
     setConnection(undefined);
     setConnectionError(null);
     setSchema(null);
     setSchemaSaved(false);
-    getDatabase(selected)
+    getDatabase(currentRepoId)
       .then((conn) => !cancelled && setConnection(conn))
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -140,15 +120,15 @@ export function AdminDatabasePage(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [selected, t]);
+  }, [currentRepoId, t]);
 
   const onConnect = async (e: FormEvent) => {
     e.preventDefault();
-    if (selected === "" || host.trim() === "" || port.trim() === "") return;
+    if (currentRepoId === "" || host.trim() === "" || port.trim() === "") return;
     setConnecting(true);
     setConnectError(null);
     try {
-      const conn = await putDatabase(selected, {
+      const conn = await putDatabase(currentRepoId, {
         db_type: dbType,
         host: host.trim(),
         port: Number(port),
@@ -166,12 +146,12 @@ export function AdminDatabasePage(): ReactNode {
   };
 
   const onIntrospect = async () => {
-    if (selected === "" || connection == null) return;
+    if (currentRepoId === "" || connection == null) return;
     setIntrospecting(true);
     setIntrospectError(null);
     setSchemaSaved(false);
     try {
-      const result = await introspect(selected);
+      const result = await introspect(currentRepoId);
       setSchema(toEditable(result.schema, connection.exposed_schema));
     } catch (err) {
       setIntrospectError(errorMessage(err, t("adminDatabase.errorIntrospect")));
@@ -181,12 +161,12 @@ export function AdminDatabasePage(): ReactNode {
   };
 
   const onSaveSchema = async () => {
-    if (selected === "" || schema === null) return;
+    if (currentRepoId === "" || schema === null) return;
     setSavingSchema(true);
     setSchemaError(null);
     setSchemaSaved(false);
     try {
-      const updated = await patchSchema(selected, toExposedSchema(schema));
+      const updated = await patchSchema(currentRepoId, toExposedSchema(schema));
       setConnection(updated);
       setSchemaSaved(true);
     } catch (err) {
@@ -197,11 +177,11 @@ export function AdminDatabasePage(): ReactNode {
   };
 
   const onDelete = async () => {
-    if (selected === "") return;
+    if (currentRepoId === "") return;
     if (!window.confirm(t("adminDatabase.confirmDelete"))) return;
     setDeleteError(null);
     try {
-      await deleteDatabase(selected);
+      await deleteDatabase(currentRepoId);
       setConnection(null);
       setSchema(null);
     } catch (err) {
@@ -248,29 +228,10 @@ export function AdminDatabasePage(): ReactNode {
     );
   };
 
-  if (reposError !== null) {
-    return <p className="error">{reposError}</p>;
-  }
-  if (repos === null) {
-    return <p>{t("adminDatabase.loadingRepos")}</p>;
-  }
-  if (repos.length === 0) {
-    return <p>{t("adminDatabase.noRepos")}</p>;
-  }
+  if (currentRepoId === "") return <p>{t("adminDatabase.noRepos")}</p>;
 
   return (
     <section className="admin-database">
-      <h1>{t("adminDatabase.title")}</h1>
-
-      <label htmlFor="database-repo">{t("adminDatabase.repositoryLabel")}</label>
-      <select id="database-repo" value={selected} onChange={(e) => setSelected(e.target.value)}>
-        {repos.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name}
-          </option>
-        ))}
-      </select>
-
       {connectionError !== null && <p className="error">{connectionError}</p>}
 
       {connection === undefined ? (
