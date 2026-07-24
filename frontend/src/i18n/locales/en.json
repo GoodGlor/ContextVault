@@ -8,6 +8,8 @@
     "language": "Language"
   },
   "nav": {
+    "query": "Ask",
+    "reports": "Reports",
     "repositories": "Repositories",
     "providers": "Providers",
     "sources": "Sources",
@@ -284,5 +286,38 @@
   },
   "answerText": {
     "jumpToSource": "Jump to source {{number}}"
+  },
+  "reports": {
+    "title": "Reports",
+    "repository": "Repository",
+    "loadingRepos": "Loading repositories…",
+    "noRepos": "No repositories yet. Ask an admin for a grant.",
+    "errorLoadRepos": "Failed to load repositories.",
+    "promptLabel": "Prompt",
+    "promptPlaceholder": "Describe the report you want, e.g. \"Monthly revenue by region\"…",
+    "generateButton": "Generate report",
+    "generating": "Generating…",
+    "errorCreate": "Could not request the report.",
+    "loadingReports": "Loading reports…",
+    "noReports": "No reports yet. Request one above.",
+    "errorLoadReports": "Failed to load reports.",
+    "statusPending": "Pending",
+    "statusProcessing": "Processing",
+    "statusDone": "Done",
+    "statusFailed": "Failed",
+    "generatingLabel": "Generating…",
+    "downloadButton": "Download PDF",
+    "errorDownload": "Could not download the report.",
+    "scheduleButton": "Repeat nightly…",
+    "scheduleTimePrompt": "Run nightly at (HH:MM):",
+    "errorSchedule": "Could not create the schedule.",
+    "schedulesTitle": "Nightly schedules",
+    "loadingSchedules": "Loading schedules…",
+    "noSchedules": "No nightly schedules yet.",
+    "errorLoadSchedules": "Failed to load schedules.",
+    "enabledLabel": "Enabled",
+    "errorToggleSchedule": "Could not update the schedule.",
+    "deleteButton": "Delete",
+    "errorDeleteSchedule": "Could not delete the schedule."
   }
 }

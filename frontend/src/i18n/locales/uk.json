@@ -8,6 +8,8 @@
     "language": "Мова"
   },
   "nav": {
+    "query": "Запити",
+    "reports": "Звіти",
     "repositories": "Репозиторії",
     "providers": "Провайдери",
     "sources": "Джерела",
@@ -288,5 +290,38 @@
   },
   "answerText": {
     "jumpToSource": "Перейти до джерела {{number}}"
+  },
+  "reports": {
+    "title": "Звіти",
+    "repository": "Репозиторій",
+    "loadingRepos": "Завантаження репозиторіїв…",
+    "noRepos": "Ще немає репозиторіїв. Попросіть адміністратора надати доступ.",
+    "errorLoadRepos": "Не вдалося завантажити репозиторії.",
+    "promptLabel": "Запит",
+    "promptPlaceholder": "Опишіть потрібний звіт, наприклад «Щомісячний дохід за регіонами»…",
+    "generateButton": "Створити звіт",
+    "generating": "Генерація…",
+    "errorCreate": "Не вдалося замовити звіт.",
+    "loadingReports": "Завантаження звітів…",
+    "noReports": "Ще немає звітів. Замовте один вище.",
+    "errorLoadReports": "Не вдалося завантажити звіти.",
+    "statusPending": "Очікує",
+    "statusProcessing": "Обробляється",
+    "statusDone": "Готово",
+    "statusFailed": "Помилка",
+    "generatingLabel": "Генерація…",
+    "downloadButton": "Завантажити PDF",
+    "errorDownload": "Не вдалося завантажити звіт.",
+    "scheduleButton": "Повторювати щоночі…",
+    "scheduleTimePrompt": "Запускати щоночі о (ГГ:ХХ):",
+    "errorSchedule": "Не вдалося створити розклад.",
+    "schedulesTitle": "Нічні розклади",
+    "loadingSchedules": "Завантаження розкладів…",
+    "noSchedules": "Ще немає нічних розкладів.",
+    "errorLoadSchedules": "Не вдалося завантажити розклади.",
+    "enabledLabel": "Увімкнено",
+    "errorToggleSchedule": "Не вдалося оновити розклад.",
+    "deleteButton": "Видалити",
+    "errorDeleteSchedule": "Не вдалося видалити розклад."
   }
 }

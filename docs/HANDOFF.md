@@ -99,6 +99,50 @@ top_score 0.71 but the LLM refuses a context-free terse answer). Files:
 `api/sources.py` (ingest `title\n\ncontent`), `api/repositories.py` (`flush` + `grant_access` to
 creator), plus TDD tests in `test_admin_notes_api.py` / `test_admin_repositories_api.py`.
 
+### Database-backed reports — branch `feat/db-reports` (14 tasks, superpowers SDD; not yet merged)
+
+Branched off `main` at `c6f1e3a` (post #114/#115). Spec → plan under `.superpowers/sdd/`; each
+task built TDD (RED confirmed, then GREEN) with its own commit. What shipped:
+- **Reporting-DB connections.** `DatabaseConnection` model (Postgres or MySQL, password
+  encrypted at rest with the existing `ENCRYPTION_KEY` field-level scheme); a dialect-abstracted
+  connector (`services/database.py`) does connection test + read-only schema introspection.
+  Admin UI: a **Database** tab to connect, introspect, and edit an allow-list of exposed
+  tables/columns (only allow-listed schema is ever shown to the LLM or queryable).
+  `PUT`/`PATCH .../database` create/update the connection and its allow-list; introspection is
+  admin-only.
+- **NL → guardrailed SQL → PDF.** A report is requested in natural language
+  (`POST .../reports`) and generated as a background task: `report_llm.py` prompts the
+  configured LLM with the allow-listed schema only and demands a strict single-JSON contract
+  (SQL + chart spec); `sqlglot`-based guardrails (`services/sql_guardrails.py`) parse and
+  validate the single-`SELECT` AST — allow-list-only tables/columns, no schema-qualified names,
+  no `pg_`/`lo_`/other privileged function family, no `SELECT INTO`, LIMIT clamped — before
+  anything executes; execution runs in a rolled-back read-only transaction with a statement
+  timeout (`services/report_execution.py`); on a guardrail or execution failure the orchestrator
+  (`services/reports.py`) feeds the error back to the LLM for one self-repair retry before giving
+  up. Rendering (`services/report_render.py`) turns the result into a matplotlib chart + a
+  Unicode-safe `fpdf2` PDF (so Cyrillic/etc. titles and labels render correctly).
+- **Per-user report history + PDF download.** `GeneratedReport` rows are per-requesting-user;
+  `GET .../reports` returns the caller's own reports (admin `?all=true` sees everyone's, plus the
+  audit-trail `generated_sql`); `GET .../reports/{id}/download` streams the stored PDF bytes;
+  owner-or-admin only, 404 (never 403) for someone else's report so existence isn't leaked.
+- **Nightly schedules.** A schedule *freezes* an already-`DONE` report's validated SQL + chart
+  spec (`ReportSchedule.frozen_sql`/`frozen_chart_spec`); the scheduler
+  (`services/report_scheduler.py`, lifespan-only background task) re-executes the frozen SQL
+  verbatim at `run_at_time` with **no further LLM call** — cheaper and immune to the LLM changing
+  its mind on a re-run. `report-schedules` API: create (freeze), list (own / admin `?all=true`),
+  PATCH (toggle `enabled` / change time), delete.
+- **Frontend (this task, #14, the final one).** `ReportsPage` — any authenticated user: pick a
+  granted repository, request a report, watch it generate (2s poll while
+  pending/processing, same idiom as the sources-ingestion poll), download the PDF
+  (`URL.createObjectURL` + revoke), see the failure reason inline, and freeze a done report into
+  a nightly schedule (prompts for a time) from a Schedules section with an enable/disable toggle
+  and delete. `/reports` route + nav link visible to all users (not admin-gated, unlike the
+  Database tab). `api/reports.ts` mirrors the two backend routers; `api.getBlob` added to the
+  client for the binary PDF download (parallels `apiFetch`'s auth/error handling, can't reuse it
+  since it resolves `.blob()` instead of `.json()`). EN/UK i18n complete.
+- Backend gate green throughout (477✓ at the end); frontend gate green (93✓, lint/format/
+  typecheck/build). **Not merged yet** — still needs a PR + the owner's review before it ships.
+
 *Older completed work (#105–#112 etc.) demoted to History.*
 
 ---
@@ -107,14 +151,41 @@ creator), plus TDD tests in `test_admin_notes_api.py` / `test_admin_repositories
 
 1. **Merge PR #115** once its backend CI goes green (frontend already ✓). Owner asked to confirm
    before merge this session; the standing directive is squash-merge after green.
-2. **Rotate the three exposed `.env` secrets** (see TL;DR) — owner action.
-3. **Re-tune `retrieval_min_score` for Gemini embeddings (worth a card).** With Gemini, even
+2. **Rotate the three exposed `.env` secrets** (see TL;DR) — owner action. This is also a
+   **prerequisite for shipping `feat/db-reports`**: that branch stores reporting-database
+   passwords with the same `ENCRYPTION_KEY` field-level scheme as provider keys, so the key must
+   be settled (not rotated again) before real connections are created against it, or every stored
+   password becomes unreadable on the next rotation.
+3. **`feat/db-reports` still needs a PR + merge decision.** Backend gate 477✓, frontend gate 93✓
+   locally at handoff; branched off `main` at `c6f1e3a` (before #114 conversations/gap-rejection
+   were on `main` at branch time — they already are, so no rebase needed, but re-diff against
+   current `main` before opening the PR in case it moved further). Honest gaps before/soon after
+   shipping:
+   - **MySQL has no CI service and is untested live.** The reporting-DB connector and guardrails
+     are dialect-abstracted and unit-tested through that abstraction (mocked/dialect-parameterized
+     tests), but no workflow spins up a real MySQL instance — the MySQL path has **never run
+     against an actual MySQL server** in this project. Postgres is the only dialect verified
+     end-to-end. Treat MySQL as beta until either a CI service is added or someone smoke-tests it
+     by hand.
+   - **No retention/cleanup of old PDFs.** `GeneratedReport.pdf_data` accumulates forever (bytea in
+     Postgres) — no TTL, no size cap, no admin purge tool. A busy nightly schedule will grow the
+     table indefinitely; needs a policy (age-based? count-per-schedule?) before nightly schedules
+     see real usage.
+   - **No per-user row-level data restrictions.** Access control is repository-level (the same
+     grant model as the RAG side) — once a user can request reports against a repository's
+     connected database, they can ask for anything within the admin's allow-listed
+     tables/columns. There is no row-level filtering (e.g. "salesperson X only sees their own
+     rows"). Fine for the current trust model (repo-level grants), a real gap if that model
+     changes.
+   - **No DOCX/PPTX export** — PDF only. Not started; would need its own render path in
+     `services/report_render.py` (or a separate module) plus corresponding download plumbing.
+4. **Re-tune `retrieval_min_score` for Gemini embeddings (worth a card).** With Gemini, even
    loosely-related chunks score ~0.7, so the current `0.3` threshold (tuned for bge-m3) barely
    filters — the LLM does all the relevance work. Flagged since #112; the "weather" confusion
    above is a symptom. Investigate a higher threshold or a relative/margin cutoff.
-4. **Decide the fate of `wip/passage-toggle`** — the parked passage view/hide toggle (frontend,
+5. **Decide the fate of `wip/passage-toggle`** — the parked passage view/hide toggle (frontend,
    green locally last session, never reviewed). Rebase onto current `main`, review, PR or drop.
-5. **SSRF DNS-rebinding / TOCTOU hardening** (`services/web_source.py`) — still open from #100.
+6. **SSRF DNS-rebinding / TOCTOU hardening** (`services/web_source.py`) — still open from #100.
    `getaddrinfo` validates the host but httpx re-resolves at connect; not pinned to the validated
    IP. Safe as-is (admin-only, redirects re-validated); harden + `/security-review` before
    non-admin exposure. Worth a card.

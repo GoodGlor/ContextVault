@@ -35,6 +35,12 @@ LLM, so different corpora can answer with different models.
   `gemini-embedding-001` (1024-dim, asymmetric task types); embedding text is sent to
   the configured Gemini provider, consistent with how image OCR already sends content
   to the provider.
+- **Database-backed reports** — connect a read-only reporting database (Postgres or
+  MySQL) to a repository, ask for a report in natural language, and get back a
+  guardrailed NL→SQL→PDF report (charts included) generated in the background. Every
+  report is kept in a per-user history with download-again access; a finished report
+  can be frozen into a nightly schedule that re-runs its exact validated SQL with no
+  further LLM call.
 
 ## Tech stack
 

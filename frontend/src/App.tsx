@@ -5,6 +5,7 @@ import { RequireAuth, RequireSession } from "./auth/RequireAuth";
 import { LoginPage } from "./pages/LoginPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { QueryPage } from "./pages/QueryPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AdminRepositoriesPage } from "./pages/AdminRepositoriesPage";
 import { AdminProvidersPage } from "./pages/AdminProvidersPage";
@@ -35,6 +36,7 @@ export function App(): ReactNode {
         }
       >
         <Route path="/" element={<QueryPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route
           path="/admin/repositories"
           element={
